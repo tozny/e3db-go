@@ -12,7 +12,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 )
 
@@ -50,11 +49,17 @@ type Cursor struct {
 	client   *Client         // e3db client object
 	ctx      context.Context // execution context
 	index    int             // current position in 'response'
+	err      error           // last error to report
 }
 
 // Advance the iterator to the next position (if available), and
 // return true if the cursor is at a valid item.
 func (c *Cursor) Next() bool {
+	// Stop iteration once we've hit an error.
+	if c.err != nil {
+		return false
+	}
+
 	var err error
 
 	// If there is no response, or we've read all its results, perform
@@ -66,6 +71,7 @@ func (c *Cursor) Next() bool {
 
 		c.response, err = c.client.search(c.ctx, c.query)
 		if err != nil {
+			c.err = err
 			return false
 		}
 
@@ -82,16 +88,21 @@ func (c *Cursor) Next() bool {
 }
 
 // Return the record at the current iterator position.
-func (c *Cursor) Get() *Record {
+func (c *Cursor) Get() (*Record, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+
 	record := c.response.Results[c.index].toRecord()
 	if c.query.IncludeData {
 		err := c.client.decryptRecord(c.ctx, record)
 		if err != nil {
-			log.Fatal(err) // XXX
+			c.err = err
+			return nil, err
 		}
 	}
 
-	return record
+	return record, nil
 }
 
 func (c *Client) Query(ctx context.Context, q Q) *Cursor {
