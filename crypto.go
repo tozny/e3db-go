@@ -8,8 +8,11 @@
 package e3db
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -19,21 +22,44 @@ import (
 	"golang.org/x/crypto/nacl/secretbox"
 )
 
-type CABEntry struct {
-	EAK                 string `json:"eak"`
-	AuthorizerID        string `json:"authorizer_id"`
-	AuthroizerPublicKey string `json:"authorizer_public_key"`
+const nonceSize = 24
+const keySize = 32
+
+func randomNonce() (*[nonceSize]byte, error) {
+	nonce := [nonceSize]byte{}
+	_, err := rand.Read(nonce[:])
+	if err != nil {
+		return nil, err
+	}
+
+	return &nonce, nil
 }
 
-type decodedCABEntry struct {
+func randomKey() (*[keySize]byte, error) {
+	key := [keySize]byte{}
+	_, err := rand.Read(key[:])
+	if err != nil {
+		return nil, err
+	}
+
+	return &key, nil
+}
+
+type GetEAK struct {
+	EAK                 string    `json:"eak"`
+	AuthorizerID        string    `json:"authorizer_id"`
+	AuthorizerPublicKey ClientKey `json:"authorizer_public_key"`
+}
+
+type decodedGetEAK struct {
 	eak                 []byte
-	nonce               [24]byte
-	authorizerPublicKey [32]byte
+	nonce               [nonceSize]byte
+	authorizerPublicKey [keySize]byte
 }
 
-func (e *CABEntry) decode() (*decodedCABEntry, error) {
+func (e *GetEAK) decode() (*decodedGetEAK, error) {
 	fields := strings.SplitN(e.EAK, ".", 2)
-	var r decodedCABEntry
+	var r decodedGetEAK
 	var err error
 	var nonceSlice, pubKSlice []byte
 
@@ -46,7 +72,7 @@ func (e *CABEntry) decode() (*decodedCABEntry, error) {
 	}
 	copy(r.nonce[:], nonceSlice)
 
-	if pubKSlice, err = base64.RawURLEncoding.DecodeString(e.AuthroizerPublicKey); err != nil {
+	if pubKSlice, err = base64.RawURLEncoding.DecodeString(e.AuthorizerPublicKey.Curve25519); err != nil {
 		return nil, err
 	}
 	copy(r.authorizerPublicKey[:], pubKSlice)
@@ -54,11 +80,21 @@ func (e *CABEntry) decode() (*decodedCABEntry, error) {
 	return &r, nil
 }
 
+type PutEAK struct {
+	EAK string `json:"eak"`
+}
+
+func encodePutEAK(eak []byte, nonce *[nonceSize]byte) *PutEAK {
+	return &PutEAK{
+		EAK: base64.RawURLEncoding.EncodeToString(eak) + "." + base64.RawURLEncoding.EncodeToString(nonce[:]),
+	}
+}
+
 type decodedField struct {
 	edk  []byte
-	edkN [24]byte
+	edkN [nonceSize]byte
 	ef   []byte
-	efN  [24]byte
+	efN  [nonceSize]byte
 }
 
 func decodeEncryptedField(s string) (*decodedField, error) {
@@ -106,26 +142,26 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 		return ak, nil
 	}
 
-	u := fmt.Sprintf("%s/cab/entry/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
+	u := fmt.Sprintf("%s/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var cabEntry CABEntry
-	resp, err := c.rawCall(ctx, req, &cabEntry)
+	var getEAK GetEAK
+	resp, err := c.rawCall(ctx, req, &getEAK)
 	if err != nil {
 		return nil, err
 	}
 
 	defer resp.Body.Close()
 
-	dentry, err := cabEntry.decode()
+	dentry, err := getEAK.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	var privKey [32]byte
+	privKey := [keySize]byte{}
 	copy(privKey[:], c.PrivateKey)
 
 	ak, good := box.Open(nil, dentry.eak, &dentry.nonce, &dentry.authorizerPublicKey, &privKey)
@@ -137,14 +173,60 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 	return ak, nil
 }
 
+func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, recordType string, ak []byte) error {
+	nonce, err := randomNonce()
+	if err != nil {
+		return err
+	}
+
+	readerPubKey, err := c.GetClientKey(ctx, readerID)
+	if err != nil {
+		return err
+	}
+
+	pubKey := [keySize]byte{}
+	copy(pubKey[:], readerPubKey)
+	privKey := [keySize]byte{}
+	copy(privKey[:], c.PrivateKey)
+
+	eak := box.Seal(nil, ak, nonce, &pubKey, &privKey)
+
+	body := encodePutEAK(eak, nonce)
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(&body)
+
+	u := fmt.Sprintf("%s/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
+	req, err := http.NewRequest("PUT", u, buf)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.rawCall(ctx, req, nil)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	// TODO: Is this the best place to do this?
+	if c.akCache == nil {
+		c.akCache = make(map[AKCacheKey][]byte)
+	}
+
+	cacheKey := AKCacheKey{writerID, userID, recordType}
+	c.akCache[cacheKey] = ak
+
+	return nil
+}
+
 // decryptRecord modifies a record in-place, decrypting all data fields
 // using an access key granted by an authorizer.
 func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
-	var ak [32]byte
 	akSlice, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
 	if err != nil {
 		return err
 	}
+	ak := [keySize]byte{}
 	copy(ak[:], akSlice)
 
 	for k, v := range record.Data {
@@ -153,11 +235,11 @@ func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
 			return err
 		}
 
-		var dk [32]byte
 		dkSlice, ok := secretbox.Open(nil, e.edk, &e.edkN, &ak)
 		if !ok {
 			return errors.New("decryption of data key failed")
 		}
+		dk := [keySize]byte{}
 		copy(dk[:], dkSlice)
 
 		field, ok := secretbox.Open(nil, e.ef, &e.efN, &dk)

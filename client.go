@@ -47,6 +47,16 @@ type Client struct {
 	akCache    map[AKCacheKey][]byte
 }
 
+type ClientKey struct {
+	Curve25519 string `json:"curve25519"`
+}
+
+type ClientInfo struct {
+	ClientID  string    `json:"client_id"`
+	PublicKey ClientKey `json:"public_key"`
+	Validated bool      `json:"validated"`
+}
+
 type Meta struct {
 	RecordID     string            `json:"record_id"`
 	WriterID     string            `json:"writer_id"`
@@ -194,7 +204,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 		c.logResponse(resp)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, errors.New(fmt.Sprintf("Invalid status code: %d", resp.StatusCode))
 	}
 
@@ -205,6 +215,28 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 	}
 
 	return resp, nil
+}
+
+func (c *Client) GetClientKey(ctx context.Context, clientID string) ([]byte, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/clients/%s", c.apiURL(), clientID), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var info ClientInfo
+	resp, err := c.rawCall(ctx, req, &info)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	key, err := base64.RawURLEncoding.DecodeString(info.PublicKey.Curve25519)
+	if err != nil {
+		return nil, err
+	}
+
+	return key, nil
 }
 
 func (c *Client) GetRaw(ctx context.Context, recordID string) (*Record, error) {
