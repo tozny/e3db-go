@@ -11,7 +11,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,14 +36,14 @@ type Client struct {
 	ClientID   string
 	ApiKey     string
 	ApiSecret  string
-	PublicKey  []byte
-	PrivateKey []byte
+	PublicKey  publicKey
+	PrivateKey privateKey
 	ApiURL     string
 	AuthURL    string
 	Logging    bool
 
 	httpClient *http.Client
-	akCache    map[AKCacheKey][]byte
+	akCache    map[AKCacheKey]secretKey
 }
 
 type ClientKey struct {
@@ -58,7 +57,7 @@ type ClientInfo struct {
 }
 
 type Meta struct {
-	RecordID     string            `json:"record_id"`
+	RecordID     string            `json:"record_id,omitempty"`
 	WriterID     string            `json:"writer_id"`
 	UserID       string            `json:"user_id"`
 	Type         string            `json:"type"`
@@ -116,12 +115,12 @@ func createClient(configPath, keyPath string) (*Client, error) {
 		return nil, err
 	}
 
-	publicKey, err := base64.RawURLEncoding.DecodeString(key.PublicKey)
+	pubKey, err := decodePublicKey(key.PublicKey)
 	if err != nil {
 		return nil, err
 	}
 
-	privateKey, err := base64.RawURLEncoding.DecodeString(key.PrivateKey)
+	privKey, err := decodePrivateKey(key.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +131,8 @@ func createClient(configPath, keyPath string) (*Client, error) {
 		AuthURL:    config.AuthURL,
 		ApiKey:     config.ApiKeyID,
 		ApiSecret:  config.ApiSecret,
-		PublicKey:  publicKey,
-		PrivateKey: privateKey,
+		PublicKey:  pubKey,
+		PrivateKey: privKey,
 	}, nil
 }
 
@@ -217,7 +216,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 	return resp, nil
 }
 
-func (c *Client) GetClientKey(ctx context.Context, clientID string) ([]byte, error) {
+func (c *Client) GetClientKey(ctx context.Context, clientID string) (publicKey, error) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/clients/%s", c.apiURL(), clientID), nil)
 	if err != nil {
 		return nil, err
@@ -231,12 +230,12 @@ func (c *Client) GetClientKey(ctx context.Context, clientID string) ([]byte, err
 
 	defer resp.Body.Close()
 
-	key, err := base64.RawURLEncoding.DecodeString(info.PublicKey.Curve25519)
+	key, err := base64Decode(info.PublicKey.Curve25519)
 	if err != nil {
 		return nil, err
 	}
 
-	return key, nil
+	return makePublicKey(key), nil
 }
 
 func (c *Client) GetRaw(ctx context.Context, recordID string) (*Record, error) {
@@ -266,4 +265,38 @@ func (c *Client) Get(ctx context.Context, recordID string) (*Record, error) {
 	}
 
 	return record, nil
+}
+
+// NewRecord creates a new record of the given content type.
+func (c *Client) NewRecord(recordType string) *Record {
+	return &Record{
+		Meta: Meta{
+			Type:     recordType,
+			WriterID: c.ClientID,
+			UserID:   c.ClientID, // for now
+		},
+		Data: make(map[string]string),
+	}
+}
+
+func (c *Client) Put(ctx context.Context, record *Record) (string, error) {
+	encryptedRecord := *record
+	if err := c.encryptRecord(ctx, &encryptedRecord); err != nil {
+		return "", err
+	}
+
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(&encryptedRecord)
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/records", c.apiURL()), buf)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.rawCall(ctx, req, &encryptedRecord)
+	if err != nil {
+		return "", err
+	}
+
+	defer resp.Body.Close()
+	return record.Meta.RecordID, nil
 }

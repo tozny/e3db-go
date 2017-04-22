@@ -32,10 +32,14 @@ type searchRecord struct {
 }
 
 func (r *searchRecord) toRecord() *Record {
-	return &Record{
-		Meta: r.Meta,
-		Data: r.Data,
+	rec := Record{Meta: r.Meta}
+	if r.Data != nil {
+		rec.Data = r.Data
+	} else {
+		rec.Data = make(map[string]string)
 	}
+
+	return &rec
 }
 
 type searchResponse struct {

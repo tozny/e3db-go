@@ -22,27 +22,187 @@ import (
 	"golang.org/x/crypto/nacl/secretbox"
 )
 
-const nonceSize = 24
-const keySize = 32
-
-func randomNonce() (*[nonceSize]byte, error) {
-	nonce := [nonceSize]byte{}
-	_, err := rand.Read(nonce[:])
-	if err != nil {
-		return nil, err
-	}
-
-	return &nonce, nil
+func base64Encode(data []byte) string {
+	return base64.RawURLEncoding.EncodeToString(data)
 }
 
-func randomKey() (*[keySize]byte, error) {
-	key := [keySize]byte{}
-	_, err := rand.Read(key[:])
+func base64Decode(s string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(s)
+}
+
+const nonceSize = 24
+
+type nonce *[nonceSize]byte
+
+// makeNonce loads an existing nonce from a byte array.
+func makeNonce(b []byte) nonce {
+	n := [nonceSize]byte{}
+	copy(n[:], b)
+	return &n
+}
+
+func randomNonce() nonce {
+	b := [nonceSize]byte{}
+	_, err := rand.Read(b[:])
+	if err != nil {
+		// we don't expect this to fail
+		panic("random number generation failed")
+	}
+
+	return &b
+}
+
+// decodeNonce constructs a nonce from a Base64URL encoded string
+// containing a 192-bit nonce, returning an error if the decode
+// operation fails.
+func decodeNonce(s string) (nonce, error) {
+	bytes, err := base64Decode(s)
 	if err != nil {
 		return nil, err
 	}
 
-	return &key, nil
+	return makeNonce(bytes), nil
+}
+
+const secretKeySize = 32
+
+type secretKey *[secretKeySize]byte
+
+// randomSecretKey generates a random secret key.
+func randomSecretKey() secretKey {
+	key := &[secretKeySize]byte{}
+	_, err := rand.Read(key[:])
+	if err != nil {
+		// we don't expect this to fail
+		panic("random number generation failed")
+	}
+
+	return key
+}
+
+// makeSecretKey loads an existing secret key from a byte array.
+func makeSecretKey(b []byte) secretKey {
+	key := [secretKeySize]byte{}
+	copy(key[:], b)
+	return &key
+}
+
+// secretBoxEncryptToBase64 uses an NaCl secret_box to encrypt a byte
+// slice with the given secret key and a random nonce,
+// returning the Base64URL encoded ciphertext and nonce.
+func secretBoxEncryptToBase64(data []byte, key secretKey) (string, string) {
+	n := randomNonce()
+	box := secretbox.Seal(nil, data, n, key)
+	return base64Encode(box), base64Encode(n[:])
+}
+
+// secretBoxDecryptFromBase64 uses NaCl secret_box to decrypt a
+// string containing ciphertext along with the associated
+// nonce, both Base64URL encoded. Returns the ciphertext bytes,
+// or an error if the authentication check fails when decrypting.
+func secretBoxDecryptFromBase64(ciphertext, nonce string, key secretKey) ([]byte, error) {
+	ciphertextBytes, err := base64Decode(ciphertext)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceBytes, err := base64Decode(nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	n := makeNonce(nonceBytes)
+	plaintext, ok := secretbox.Open(nil, ciphertextBytes, n, key)
+	if !ok {
+		return nil, errors.New("decryption failed")
+	}
+
+	return plaintext, nil
+}
+
+const publicKeySize = 32
+const privateKeySize = 32
+
+type publicKey *[publicKeySize]byte
+type privateKey *[privateKeySize]byte
+
+func makePublicKey(b []byte) publicKey {
+	key := [publicKeySize]byte{}
+	copy(key[:], b)
+	return &key
+}
+
+// decodePublicKey decodes a public key from a Base64URL encoded
+// string containing a 256-bit Curve25519 public key, returning an
+// error if the decode operation fails.
+func decodePublicKey(s string) (publicKey, error) {
+	bytes, err := base64Decode(s)
+	if err != nil {
+		return nil, err
+	}
+
+	return makePublicKey(bytes), nil
+}
+
+func makePrivateKey(b []byte) privateKey {
+	key := [privateKeySize]byte{}
+	copy(key[:], b)
+	return &key
+}
+
+// decodePrivateKey decodes a private key from a Base64URL encoded
+// string containing a 256-bit Curve25519 private key, returning an
+// error if the decode operation fails.
+func decodePrivateKey(s string) (privateKey, error) {
+	bytes, err := base64Decode(s)
+	if err != nil {
+		return nil, err
+	}
+
+	return makePrivateKey(bytes), nil
+}
+
+func boxEncryptToBase64(data []byte, pubKey publicKey, privKey privateKey) (string, string) {
+	n := randomNonce()
+	ciphertext := box.Seal(nil, data, n, pubKey, privKey)
+	return base64Encode(ciphertext), base64Encode(n[:])
+}
+
+func boxDecryptFromBase64(ciphertext, nonce string, pubKey publicKey, privKey privateKey) ([]byte, error) {
+	ciphertextBytes, err := base64Decode(ciphertext)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceBytes, err := base64Decode(nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	n := makeNonce(nonceBytes)
+	plaintext, ok := box.Open(nil, ciphertextBytes, n, pubKey, privKey)
+	if !ok {
+		return nil, errors.New("decryption failed")
+	}
+
+	return plaintext, nil
+}
+
+func (c *Client) getAKCache(akID AKCacheKey) (secretKey, bool) {
+	if c.akCache == nil {
+		c.akCache = make(map[AKCacheKey]secretKey)
+	}
+
+	k, ok := c.akCache[akID]
+	return k, ok
+}
+
+func (c *Client) putAKCache(akID AKCacheKey, k secretKey) {
+	if c.akCache == nil {
+		c.akCache = make(map[AKCacheKey]secretKey)
+	}
+
+	c.akCache[akID] = k
 }
 
 type GetEAK struct {
@@ -51,94 +211,15 @@ type GetEAK struct {
 	AuthorizerPublicKey ClientKey `json:"authorizer_public_key"`
 }
 
-type decodedGetEAK struct {
-	eak                 []byte
-	nonce               [nonceSize]byte
-	authorizerPublicKey [keySize]byte
-}
-
-func (e *GetEAK) decode() (*decodedGetEAK, error) {
-	fields := strings.SplitN(e.EAK, ".", 2)
-	var r decodedGetEAK
-	var err error
-	var nonceSlice, pubKSlice []byte
-
-	if r.eak, err = base64.RawURLEncoding.DecodeString(fields[0]); err != nil {
-		return nil, err
-	}
-
-	if nonceSlice, err = base64.RawURLEncoding.DecodeString(fields[1]); err != nil {
-		return nil, err
-	}
-	copy(r.nonce[:], nonceSlice)
-
-	if pubKSlice, err = base64.RawURLEncoding.DecodeString(e.AuthorizerPublicKey.Curve25519); err != nil {
-		return nil, err
-	}
-	copy(r.authorizerPublicKey[:], pubKSlice)
-
-	return &r, nil
-}
-
 type PutEAK struct {
 	EAK string `json:"eak"`
 }
 
-func encodePutEAK(eak []byte, nonce *[nonceSize]byte) *PutEAK {
-	return &PutEAK{
-		EAK: base64.RawURLEncoding.EncodeToString(eak) + "." + base64.RawURLEncoding.EncodeToString(nonce[:]),
-	}
-}
-
-type decodedField struct {
-	edk  []byte
-	edkN [nonceSize]byte
-	ef   []byte
-	efN  [nonceSize]byte
-}
-
-func decodeEncryptedField(s string) (*decodedField, error) {
-	var r decodedField
-	var edkNSlice []byte
-	var efNSlice []byte
-	var err error
-
-	fields := strings.SplitN(s, ".", 4)
-
-	if r.edk, err = base64.RawURLEncoding.DecodeString(fields[0]); err != nil {
-		return nil, err
-	}
-
-	if edkNSlice, err = base64.RawURLEncoding.DecodeString(fields[1]); err != nil {
-		return nil, err
-	}
-	copy(r.edkN[:], edkNSlice)
-
-	if r.ef, err = base64.RawURLEncoding.DecodeString(fields[2]); err != nil {
-		return nil, err
-	}
-
-	if efNSlice, err = base64.RawURLEncoding.DecodeString(fields[3]); err != nil {
-		return nil, err
-	}
-	copy(r.efN[:], efNSlice)
-
-	return &r, nil
-}
-
 // TODO: Distinguish between HTTP errors like "NotFound" vs. actual unexpected
 // errors so we can figure out if we should generate a new AK.
-func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, recordType string) ([]byte, error) {
-	var ak []byte
-
-	// TODO: Is this the best place to do this?
-	if c.akCache == nil {
-		c.akCache = make(map[AKCacheKey][]byte)
-	}
-
-	cacheKey := AKCacheKey{writerID, userID, recordType}
-	ak, ok := c.akCache[cacheKey]
-	if ok {
+func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, recordType string) (secretKey, error) {
+	akID := AKCacheKey{writerID, userID, recordType}
+	if ak, ok := c.getAKCache(akID); ok {
 		return ak, nil
 	}
 
@@ -156,44 +237,35 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 
 	defer resp.Body.Close()
 
-	dentry, err := getEAK.decode()
+	fields := strings.SplitN(getEAK.EAK, ".", 2)
+	if len(fields) != 2 {
+		return nil, errors.New("invalid access key format")
+	}
+
+	authorizerPublicKey, err := decodePublicKey(getEAK.AuthorizerPublicKey.Curve25519)
 	if err != nil {
 		return nil, err
 	}
 
-	privKey := [keySize]byte{}
-	copy(privKey[:], c.PrivateKey)
-
-	ak, good := box.Open(nil, dentry.eak, &dentry.nonce, &dentry.authorizerPublicKey, &privKey)
-	if !good {
+	akBytes, err := boxDecryptFromBase64(fields[0], fields[1], authorizerPublicKey, c.PrivateKey)
+	if err != nil {
 		return nil, errors.New("access key decryption failure")
 	}
 
-	c.akCache[cacheKey] = ak
+	ak := makeSecretKey(akBytes)
+	c.putAKCache(akID, ak)
 	return ak, nil
 }
 
-func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, recordType string, ak []byte) error {
-	nonce, err := randomNonce()
-	if err != nil {
-		return err
-	}
-
+func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, recordType string, ak secretKey) error {
 	readerPubKey, err := c.GetClientKey(ctx, readerID)
 	if err != nil {
 		return err
 	}
 
-	pubKey := [keySize]byte{}
-	copy(pubKey[:], readerPubKey)
-	privKey := [keySize]byte{}
-	copy(privKey[:], c.PrivateKey)
-
-	eak := box.Seal(nil, ak, nonce, &pubKey, &privKey)
-
-	body := encodePutEAK(eak, nonce)
+	eak, eakN := boxEncryptToBase64(ak[:], readerPubKey, c.PrivateKey)
 	buf := new(bytes.Buffer)
-	json.NewEncoder(buf).Encode(&body)
+	json.NewEncoder(buf).Encode(&PutEAK{EAK: fmt.Sprintf("%s.%s", eak, eakN)})
 
 	u := fmt.Sprintf("%s/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, buf)
@@ -210,7 +282,7 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 
 	// TODO: Is this the best place to do this?
 	if c.akCache == nil {
-		c.akCache = make(map[AKCacheKey][]byte)
+		c.akCache = make(map[AKCacheKey]secretKey)
 	}
 
 	cacheKey := AKCacheKey{writerID, userID, recordType}
@@ -222,32 +294,57 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 // decryptRecord modifies a record in-place, decrypting all data fields
 // using an access key granted by an authorizer.
 func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
-	akSlice, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
+	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
 	if err != nil {
 		return err
 	}
-	ak := [keySize]byte{}
-	copy(ak[:], akSlice)
 
 	for k, v := range record.Data {
-		e, err := decodeEncryptedField(v)
+		fields := strings.SplitN(v, ".", 4)
+		if len(fields) != 4 {
+			return errors.New("invalid record data format")
+		}
+
+		edk := fields[0]
+		edkN := fields[1]
+		ef := fields[2]
+		efN := fields[3]
+
+		dkBytes, err := secretBoxDecryptFromBase64(edk, edkN, ak)
 		if err != nil {
 			return err
 		}
 
-		dkSlice, ok := secretbox.Open(nil, e.edk, &e.edkN, &ak)
-		if !ok {
-			return errors.New("decryption of data key failed")
-		}
-		dk := [keySize]byte{}
-		copy(dk[:], dkSlice)
-
-		field, ok := secretbox.Open(nil, e.ef, &e.efN, &dk)
-		if !ok {
+		dk := makeSecretKey(dkBytes)
+		field, err := secretBoxDecryptFromBase64(ef, efN, dk)
+		if err != nil {
 			return errors.New("decryption of field data failed")
 		}
 
 		record.Data[k] = string(field)
+	}
+
+	return nil
+}
+
+// encryptRecord modifies a record in-place, encrypting all data fields
+// using an access key granted by the authorizer.
+func (c *Client) encryptRecord(ctx context.Context, record *Record) error {
+	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
+	if err != nil {
+		ak = randomSecretKey()
+		err = c.putAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type, ak)
+		if err != nil {
+			return err
+		}
+	}
+
+	for k, v := range record.Data {
+		dk := randomSecretKey()
+		ef, efN := secretBoxEncryptToBase64([]byte(v), dk)
+		edk, edkN := secretBoxEncryptToBase64(dk[:], ak)
+
+		record.Data[k] = fmt.Sprintf("%s.%s.%s.%s", edk, edkN, ef, efN)
 	}
 
 	return nil
