@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 
 	homedir "github.com/mitchellh/go-homedir"
 )
@@ -25,6 +26,7 @@ type configFile struct {
 }
 
 type keyFile struct {
+	Version    int    `json:"version"`
 	PublicKey  string `json:"public_key"`
 	PrivateKey string `json:"private_key"`
 }
@@ -60,6 +62,10 @@ func loadConfig(configPath, keyPath string) (*ClientOpts, error) {
 		return nil, err
 	}
 
+	if key.Version != 1 {
+		return nil, fmt.Errorf("e3db.loadConfig: unsupported key file version: %d", key.Version)
+	}
+
 	pubKey, err := decodePublicKey(key.PublicKey)
 	if err != nil {
 		return nil, err
@@ -93,6 +99,11 @@ func saveConfig(configPath, keyPath string, opts *ClientOpts) error {
 		return err
 	}
 
+	err = os.MkdirAll(path.Dir(keyFullPath), 0700)
+	if err != nil {
+		return err
+	}
+
 	configFd, err := os.OpenFile(configFullPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0400)
 	if err != nil {
 		return err
@@ -118,6 +129,7 @@ func saveConfig(configPath, keyPath string, opts *ClientOpts) error {
 	}
 
 	keyObj := keyFile{
+		Version:    1,
 		PublicKey:  encodePublicKey(opts.PublicKey),
 		PrivateKey: encodePrivateKey(opts.PrivateKey),
 	}
