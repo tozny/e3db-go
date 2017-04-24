@@ -20,8 +20,8 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 )
 
-const defaultStorageURL = "http://localhost:8000/v1"
-const defaultAuthURL = "http://localhost:7000/v1"
+const defaultStorageURL = "https://api.dev.e3db.tozny.com/v1"
+const defaultAuthURL = "https://api.dev.tot.tozny.com/v1"
 
 type akCacheKey struct {
 	WriterID string
