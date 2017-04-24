@@ -275,5 +275,5 @@ func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 	}
 
 	defer resp.Body.Close()
-	return record.Meta.RecordID, nil
+	return encryptedRecord.Meta.RecordID, nil
 }

@@ -145,13 +145,8 @@ func fileExists(name string) (bool, error) {
 // ProfileExists returns true if a configuration exists for the
 // given profile name.
 func ProfileExists(profile string) bool {
-	configExists, err := fileExists(fmt.Sprintf("~/.tozny/%s/e3db.json", profile))
-	fmt.Println(err)
-	keyExists, err := fileExists(fmt.Sprintf("~/.tozny/%s/e3db_key.json", profile))
-	fmt.Println(err)
-
-	fmt.Printf("configExists=%v keyExists=%v\n", configExists, keyExists)
-
+	configExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db.json", profile))
+	keyExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db_key.json", profile))
 	return configExists && keyExists
 }
 
