@@ -126,6 +126,15 @@ const privateKeySize = 32
 type publicKey *[publicKeySize]byte
 type privateKey *[privateKeySize]byte
 
+func generateKeyPair() (publicKey, privateKey, error) {
+	pub, priv, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return pub, priv, nil
+}
+
 func makePublicKey(b []byte) publicKey {
 	key := [publicKeySize]byte{}
 	copy(key[:], b)
@@ -144,6 +153,10 @@ func decodePublicKey(s string) (publicKey, error) {
 	return makePublicKey(bytes), nil
 }
 
+func encodePublicKey(k publicKey) string {
+	return base64Encode(k[:])
+}
+
 func makePrivateKey(b []byte) privateKey {
 	key := [privateKeySize]byte{}
 	copy(key[:], b)
@@ -160,6 +173,10 @@ func decodePrivateKey(s string) (privateKey, error) {
 	}
 
 	return makePrivateKey(bytes), nil
+}
+
+func encodePrivateKey(k privateKey) string {
+	return base64Encode(k[:])
 }
 
 func boxEncryptToBase64(data []byte, pubKey publicKey, privKey privateKey) (string, string) {
@@ -188,37 +205,37 @@ func boxDecryptFromBase64(ciphertext, nonce string, pubKey publicKey, privKey pr
 	return plaintext, nil
 }
 
-func (c *Client) getAKCache(akID AKCacheKey) (secretKey, bool) {
+func (c *Client) getAKCache(akID akCacheKey) (secretKey, bool) {
 	if c.akCache == nil {
-		c.akCache = make(map[AKCacheKey]secretKey)
+		c.akCache = make(map[akCacheKey]secretKey)
 	}
 
 	k, ok := c.akCache[akID]
 	return k, ok
 }
 
-func (c *Client) putAKCache(akID AKCacheKey, k secretKey) {
+func (c *Client) putAKCache(akID akCacheKey, k secretKey) {
 	if c.akCache == nil {
-		c.akCache = make(map[AKCacheKey]secretKey)
+		c.akCache = make(map[akCacheKey]secretKey)
 	}
 
 	c.akCache[akID] = k
 }
 
-type GetEAK struct {
+type getEAKResponse struct {
 	EAK                 string    `json:"eak"`
 	AuthorizerID        string    `json:"authorizer_id"`
-	AuthorizerPublicKey ClientKey `json:"authorizer_public_key"`
+	AuthorizerPublicKey clientKey `json:"authorizer_public_key"`
 }
 
-type PutEAK struct {
+type putEAKRequest struct {
 	EAK string `json:"eak"`
 }
 
 // TODO: Distinguish between HTTP errors like "NotFound" vs. actual unexpected
 // errors so we can figure out if we should generate a new AK.
 func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, recordType string) (secretKey, error) {
-	akID := AKCacheKey{writerID, userID, recordType}
+	akID := akCacheKey{writerID, userID, recordType}
 	if ak, ok := c.getAKCache(akID); ok {
 		return ak, nil
 	}
@@ -229,7 +246,7 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 		return nil, err
 	}
 
-	var getEAK GetEAK
+	var getEAK getEAKResponse
 	resp, err := c.rawCall(ctx, req, &getEAK)
 	if err != nil {
 		return nil, err
@@ -247,7 +264,7 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 		return nil, err
 	}
 
-	akBytes, err := boxDecryptFromBase64(fields[0], fields[1], authorizerPublicKey, c.PrivateKey)
+	akBytes, err := boxDecryptFromBase64(fields[0], fields[1], authorizerPublicKey, c.privateKey)
 	if err != nil {
 		return nil, errors.New("access key decryption failure")
 	}
@@ -258,14 +275,14 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 }
 
 func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, recordType string, ak secretKey) error {
-	readerPubKey, err := c.GetClientKey(ctx, readerID)
+	readerPubKey, err := c.getClientKey(ctx, readerID)
 	if err != nil {
 		return err
 	}
 
-	eak, eakN := boxEncryptToBase64(ak[:], readerPubKey, c.PrivateKey)
+	eak, eakN := boxEncryptToBase64(ak[:], readerPubKey, c.privateKey)
 	buf := new(bytes.Buffer)
-	json.NewEncoder(buf).Encode(&PutEAK{EAK: fmt.Sprintf("%s.%s", eak, eakN)})
+	json.NewEncoder(buf).Encode(&putEAKRequest{EAK: fmt.Sprintf("%s.%s", eak, eakN)})
 
 	u := fmt.Sprintf("%s/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, buf)
@@ -282,10 +299,10 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 
 	// TODO: Is this the best place to do this?
 	if c.akCache == nil {
-		c.akCache = make(map[AKCacheKey]secretKey)
+		c.akCache = make(map[akCacheKey]secretKey)
 	}
 
-	cacheKey := AKCacheKey{writerID, userID, recordType}
+	cacheKey := akCacheKey{writerID, userID, recordType}
 	c.akCache[cacheKey] = ak
 
 	return nil
@@ -294,7 +311,7 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 // decryptRecord modifies a record in-place, decrypting all data fields
 // using an access key granted by an authorizer.
 func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
-	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
+	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.clientID, record.Meta.Type)
 	if err != nil {
 		return err
 	}
@@ -330,10 +347,10 @@ func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
 // encryptRecord modifies a record in-place, encrypting all data fields
 // using an access key granted by the authorizer.
 func (c *Client) encryptRecord(ctx context.Context, record *Record) error {
-	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
+	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.clientID, record.Meta.Type)
 	if err != nil {
 		ak = randomSecretKey()
-		err = c.putAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type, ak)
+		err = c.putAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.clientID, record.Meta.Type, ak)
 		if err != nil {
 			return err
 		}

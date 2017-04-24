@@ -15,6 +15,7 @@ import (
 	"net/http"
 )
 
+// Q contains options for querying a set of records in the database.
 type Q struct {
 	Count        int               `json:"count,omitempty"`
 	IncludeData  bool              `json:"include_data,omitempty"`
@@ -47,6 +48,7 @@ type searchResponse struct {
 	LastIndex int            `json:"last_index"`
 }
 
+// Cursor represents an iterator into a recordset returned by 'e3db.Query'.
 type Cursor struct {
 	query    Q               // current query
 	response *searchResponse // last response
@@ -56,7 +58,7 @@ type Cursor struct {
 	err      error           // last error to report
 }
 
-// Advance the iterator to the next position (if available), and
+// Next advances the cursor to the next position (if available), and
 // return true if the cursor is at a valid item.
 func (c *Cursor) Next() bool {
 	// Stop iteration once we've hit an error.
@@ -85,13 +87,13 @@ func (c *Cursor) Next() bool {
 
 		c.index = 0
 	} else {
-		c.index += 1
+		c.index++
 	}
 
 	return true
 }
 
-// Return the record at the current iterator position.
+// Get returns the record at the current cursor position.
 func (c *Cursor) Get() (*Record, error) {
 	if c.err != nil {
 		return nil, c.err
@@ -109,6 +111,9 @@ func (c *Cursor) Get() (*Record, error) {
 	return record, nil
 }
 
+// Query executes a database query given a set of search parameters,
+// returning a cursor that can be iterated over to loop through
+// the result set.
 func (c *Client) Query(ctx context.Context, q Q) *Cursor {
 	return &Cursor{
 		client:   c,
