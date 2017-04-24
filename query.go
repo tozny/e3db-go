@@ -17,7 +17,7 @@ import (
 
 // Q contains options for querying a set of records in the database.
 type Q struct {
-	Count        int               `json:"count,omitempty"`
+	Count        int               `json:"count"`
 	IncludeData  bool              `json:"include_data,omitempty"`
 	WriterIDs    []string          `json:"writer_ids,omitempty"`
 	UserIDs      []string          `json:"user_ids,omitempty"`
@@ -73,6 +73,12 @@ func (c *Cursor) Next() bool {
 	if c.response == nil || c.index+1 >= len(c.response.Results) {
 		if c.response != nil {
 			c.query.AfterIndex = c.response.LastIndex
+
+			// If the previous response was shorter than a full page,
+			// we know we've reached the end of the result set.
+			if len(c.response.Results) < c.query.Count {
+				return false
+			}
 		}
 
 		c.response, err = c.client.search(c.ctx, c.query)
@@ -115,6 +121,10 @@ func (c *Cursor) Get() (*Record, error) {
 // returning a cursor that can be iterated over to loop through
 // the result set.
 func (c *Client) Query(ctx context.Context, q Q) *Cursor {
+	if q.Count == 0 {
+		q.Count = 50
+	}
+
 	return &Cursor{
 		client:   c,
 		ctx:      ctx,
