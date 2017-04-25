@@ -303,6 +303,23 @@ func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 	return encryptedRecord.Meta.RecordID, nil
 }
 
+// Delete deletes a record given a record ID.
+func (c *Client) Delete(ctx context.Context, recordID string) error {
+	u := fmt.Sprintf("%s/records/%s", c.apiURL(), url.QueryEscape(recordID))
+	req, err := http.NewRequest("DELETE", u, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.rawCall(ctx, req, nil)
+	if err != nil {
+		return nil
+	}
+
+	defer resp.Body.Close()
+	return nil
+}
+
 const allowReadPolicy = `{"allow": [{"read": {}}]}`
 
 // Share grants another e3db client permission to read records of the
