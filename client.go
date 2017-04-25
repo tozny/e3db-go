@@ -321,6 +321,7 @@ func (c *Client) Delete(ctx context.Context, recordID string) error {
 }
 
 const allowReadPolicy = `{"allow": [{"read": {}}]}`
+const denyReadPolicy = `{"deny": [{"read": {}}]}`
 
 // Share grants another e3db client permission to read records of the
 // specified record type.
@@ -345,6 +346,31 @@ func (c *Client) Share(ctx context.Context, recordType string, reader string) er
 
 	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, info.ClientID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(allowReadPolicy))
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.rawCall(ctx, req, nil)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+	return nil
+}
+
+// Unshare revokes another e3db client's permission to read records of the
+// given record type.
+func (c *Client) Unshare(ctx context.Context, recordType string, reader string) error {
+	info, err := c.GetClientInfo(ctx, reader)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Need to delete their access key!
+
+	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, info.ClientID, recordType)
+	req, err := http.NewRequest("PUT", u, strings.NewReader(denyReadPolicy))
 	if err != nil {
 		return err
 	}
