@@ -32,6 +32,7 @@ type registerResponse struct {
 type RegistrationOpts struct {
 	APIBaseURL  string
 	AuthBaseURL string
+	FindByEmail bool
 	Logging     bool
 }
 
@@ -62,7 +63,7 @@ func RegisterClient(email string, opts RegistrationOpts) (*ClientOpts, error) {
 	regReq := registerRequest{
 		Email:       email,
 		PublicKey:   clientKey{Curve25519: base64Encode(pub[:])},
-		FindByEmail: true,
+		FindByEmail: opts.FindByEmail,
 	}
 
 	client := http.Client{}

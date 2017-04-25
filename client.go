@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2/clientcredentials"
@@ -44,23 +46,26 @@ type ClientOpts struct {
 // Client is an authenticated connection to the E3DB service, providing
 // access to end-to-end encrypted data stored in the database.
 type Client struct {
-	clientID    string
-	apiKeyID    string
-	apiSecret   string
-	publicKey   publicKey
-	privateKey  privateKey
-	apiBaseURL  string
-	authBaseURL string
-	logging     bool
-	httpClient  *http.Client
-	akCache     map[akCacheKey]secretKey
+	ClientID    string
+	APIKeyID    string
+	APISecret   string
+	PublicKey   publicKey
+	PrivateKey  privateKey
+	APIBaseURL  string
+	AuthBaseURL string
+	Logging     bool
+
+	httpClient *http.Client
+	akCache    map[akCacheKey]secretKey
 }
 
 type clientKey struct {
 	Curve25519 string `json:"curve25519"`
 }
 
-type clientInfo struct {
+// ClientInfo contains information sent by the E3DB service
+// about a client.
+type ClientInfo struct {
 	ClientID  string    `json:"client_id"`
 	PublicKey clientKey `json:"public_key"`
 	Validated bool      `json:"validated"`
@@ -106,31 +111,31 @@ func GetDefaultClient() (*Client, error) {
 // 'GetConfig' to load options from a configuration profile.
 func GetClient(opts ClientOpts) (*Client, error) {
 	return &Client{
-		clientID:    opts.ClientID,
-		apiBaseURL:  opts.APIBaseURL,
-		authBaseURL: opts.AuthBaseURL,
-		apiKeyID:    opts.APIKeyID,
-		apiSecret:   opts.APISecret,
-		publicKey:   opts.PublicKey,
-		privateKey:  opts.PrivateKey,
-		logging:     opts.Logging,
+		ClientID:    opts.ClientID,
+		APIBaseURL:  opts.APIBaseURL,
+		AuthBaseURL: opts.AuthBaseURL,
+		APIKeyID:    opts.APIKeyID,
+		APISecret:   opts.APISecret,
+		PublicKey:   opts.PublicKey,
+		PrivateKey:  opts.PrivateKey,
+		Logging:     opts.Logging,
 	}, nil
 }
 
 func (c *Client) apiURL() string {
-	if c.apiBaseURL == "" {
+	if c.APIBaseURL == "" {
 		return defaultStorageURL
 	}
 
-	return c.apiBaseURL
+	return c.APIBaseURL
 }
 
 func (c *Client) authURL() string {
-	if c.authBaseURL == "" {
+	if c.AuthBaseURL == "" {
 		return defaultAuthURL
 	}
 
-	return c.authBaseURL
+	return c.AuthBaseURL
 }
 
 func logRequest(req *http.Request) {
@@ -152,14 +157,14 @@ func logResponse(resp *http.Response) {
 func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult interface{}) (*http.Response, error) {
 	if c.httpClient == nil {
 		config := clientcredentials.Config{
-			ClientID:     c.apiKeyID,
-			ClientSecret: c.apiSecret,
+			ClientID:     c.APIKeyID,
+			ClientSecret: c.APISecret,
 			TokenURL:     c.authURL() + "/token",
 		}
 		c.httpClient = config.Client(ctx)
 	}
 
-	if c.logging {
+	if c.Logging {
 		logRequest(req)
 	}
 
@@ -168,7 +173,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 		return nil, err
 	}
 
-	if c.logging {
+	if c.Logging {
 		logResponse(resp)
 	}
 
@@ -185,22 +190,42 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 	return resp, nil
 }
 
-// getClientKey queries the E3DB server for a client's public key
-// given its client UUID. (This was exported in the Java SDK but
-// I'm not sure why since it's rather low level.)
-func (c *Client) getClientKey(ctx context.Context, clientID string) (publicKey, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/clients/%s", c.apiURL(), clientID), nil)
+// GetClientInfo queries the E3DB server for a client's public
+// information given its client UUID or email (if enabled).
+func (c *Client) GetClientInfo(ctx context.Context, clientID string) (*ClientInfo, error) {
+	var u, method string
+
+	if strings.Contains(clientID, "@") {
+		u = fmt.Sprintf("%s/clients/find?email=%s", c.apiURL(), url.QueryEscape(clientID))
+		method = "POST"
+	} else {
+		u = fmt.Sprintf("%s/clients/%s", c.apiURL(), url.QueryEscape(clientID))
+		method = "GET"
+	}
+
+	req, err := http.NewRequest(method, u, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var info clientInfo
+	var info ClientInfo
 	resp, err := c.rawCall(ctx, req, &info)
 	if err != nil {
 		return nil, err
 	}
 
 	defer resp.Body.Close()
+	return &info, nil
+}
+
+// getClientKey queries the E3DB server for a client's public key
+// given its client UUID. (This was exported in the Java SDK but
+// I'm not sure why since it's rather low level.)
+func (c *Client) getClientKey(ctx context.Context, clientID string) (publicKey, error) {
+	info, err := c.GetClientInfo(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
 
 	key, err := base64Decode(info.PublicKey.Curve25519)
 	if err != nil {
@@ -247,8 +272,8 @@ func (c *Client) NewRecord(recordType string) *Record {
 	return &Record{
 		Meta: Meta{
 			Type:     recordType,
-			WriterID: c.clientID,
-			UserID:   c.clientID, // for now
+			WriterID: c.ClientID,
+			UserID:   c.ClientID, // for now
 		},
 		Data: make(map[string]string),
 	}
@@ -276,4 +301,42 @@ func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 
 	defer resp.Body.Close()
 	return encryptedRecord.Meta.RecordID, nil
+}
+
+const allowReadPolicy = `{"allow": [{"read": {}}]}`
+
+// Share grants another e3db client permission to read records of the
+// specified record type.
+func (c *Client) Share(ctx context.Context, recordType string, reader string) error {
+	info, err := c.GetClientInfo(ctx, reader)
+	if err != nil {
+		return err
+	}
+
+	ak, err := c.getAccessKey(ctx, c.ClientID, c.ClientID, c.ClientID, recordType)
+	if err != nil {
+		return err
+	}
+
+	// FIXME: This makes an additional unnecessary request to obtain the
+	// reader's public key again. We probably should maintain a cache of
+	// these as well, but I do start to worry about invalidation...
+	err = c.putAccessKey(ctx, c.ClientID, c.ClientID, info.ClientID, recordType, ak)
+	if err != nil {
+		return err
+	}
+
+	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, info.ClientID, recordType)
+	req, err := http.NewRequest("PUT", u, strings.NewReader(allowReadPolicy))
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.rawCall(ctx, req, nil)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+	return nil
 }

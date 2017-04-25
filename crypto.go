@@ -264,7 +264,7 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 		return nil, err
 	}
 
-	akBytes, err := boxDecryptFromBase64(fields[0], fields[1], authorizerPublicKey, c.privateKey)
+	akBytes, err := boxDecryptFromBase64(fields[0], fields[1], authorizerPublicKey, c.PrivateKey)
 	if err != nil {
 		return nil, errors.New("access key decryption failure")
 	}
@@ -280,7 +280,7 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 		return err
 	}
 
-	eak, eakN := boxEncryptToBase64(ak[:], readerPubKey, c.privateKey)
+	eak, eakN := boxEncryptToBase64(ak[:], readerPubKey, c.PrivateKey)
 	buf := new(bytes.Buffer)
 	json.NewEncoder(buf).Encode(&putEAKRequest{EAK: fmt.Sprintf("%s.%s", eak, eakN)})
 
@@ -311,7 +311,7 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 // decryptRecord modifies a record in-place, decrypting all data fields
 // using an access key granted by an authorizer.
 func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
-	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.clientID, record.Meta.Type)
+	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
 	if err != nil {
 		return err
 	}
@@ -347,10 +347,10 @@ func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
 // encryptRecord modifies a record in-place, encrypting all data fields
 // using an access key granted by the authorizer.
 func (c *Client) encryptRecord(ctx context.Context, record *Record) error {
-	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.clientID, record.Meta.Type)
+	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
 	if err != nil {
 		ak = randomSecretKey()
-		err = c.putAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.clientID, record.Meta.Type, ak)
+		err = c.putAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type, ak)
 		if err != nil {
 			return err
 		}
