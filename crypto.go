@@ -249,6 +249,12 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 	var getEAK getEAKResponse
 	resp, err := c.rawCall(ctx, req, &getEAK)
 	if err != nil {
+		if httpErr, ok := err.(*httpError); ok {
+			if httpErr.StatusCode == http.StatusNotFound {
+				return nil, nil
+			}
+		}
+
 		return nil, err
 	}
 
@@ -316,6 +322,10 @@ func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
 		return err
 	}
 
+	if ak == nil {
+		return errors.New("cannot obtain access key")
+	}
+
 	for k, v := range record.Data {
 		fields := strings.SplitN(v, ".", 4)
 		if len(fields) != 4 {
@@ -349,6 +359,11 @@ func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
 func (c *Client) encryptRecord(ctx context.Context, record *Record) error {
 	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
 	if err != nil {
+		return nil
+	}
+
+	// If no access key was present, create a random one and store it.
+	if ak == nil {
 		ak = randomSecretKey()
 		err = c.putAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type, ak)
 		if err != nil {

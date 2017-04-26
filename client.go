@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -154,6 +155,16 @@ func logResponse(resp *http.Response) {
 	}
 }
 
+type httpError struct {
+	message    string
+	URL        string
+	StatusCode int
+}
+
+func (err *httpError) Error() string {
+	return err.message
+}
+
 func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult interface{}) (*http.Response, error) {
 	if c.httpClient == nil {
 		config := clientcredentials.Config{
@@ -178,7 +189,11 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 	}
 
 	if !(resp.StatusCode >= 200 && resp.StatusCode <= 299) {
-		return nil, fmt.Errorf("e3db: server http error %d", resp.StatusCode)
+		return nil, &httpError{
+			StatusCode: resp.StatusCode,
+			URL:        req.URL.String(),
+			message:    fmt.Sprintf("e3db: server http error %d", resp.StatusCode),
+		}
 	}
 
 	if jsonResult != nil {
@@ -334,6 +349,10 @@ func (c *Client) Share(ctx context.Context, recordType string, reader string) er
 	ak, err := c.getAccessKey(ctx, c.ClientID, c.ClientID, c.ClientID, recordType)
 	if err != nil {
 		return err
+	}
+
+	if ak == nil {
+		return errors.New("no applicable records exist to share")
 	}
 
 	// FIXME: This makes an additional unnecessary request to obtain the
