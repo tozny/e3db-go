@@ -306,19 +306,19 @@ func (c *Client) NewRecord(recordType string) *Record {
 // Write writes a new encrypted record to the database, returning the new record's
 // unique ID.
 func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
-	encryptedRecord := *record
-	if err := c.encryptRecord(ctx, &encryptedRecord); err != nil {
+	encryptedRecord, err := c.encryptRecord(ctx, record)
+	if err != nil {
 		return "", err
 	}
 
 	buf := new(bytes.Buffer)
-	json.NewEncoder(buf).Encode(&encryptedRecord)
+	json.NewEncoder(buf).Encode(encryptedRecord)
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/records", c.apiURL()), buf)
 	if err != nil {
 		return "", err
 	}
 
-	resp, err := c.rawCall(ctx, req, &encryptedRecord)
+	resp, err := c.rawCall(ctx, req, encryptedRecord)
 	if err != nil {
 		return "", err
 	}

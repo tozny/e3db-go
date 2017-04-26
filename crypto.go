@@ -354,12 +354,13 @@ func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
 	return nil
 }
 
-// encryptRecord modifies a record in-place, encrypting all data fields
-// using an access key granted by the authorizer.
-func (c *Client) encryptRecord(ctx context.Context, record *Record) error {
+// encryptRecord mencrypting all data fields in a record
+// using an access key granted by the authorizer, returning
+// a new record.
+func (c *Client) encryptRecord(ctx context.Context, record *Record) (*Record, error) {
 	ak, err := c.getAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	// If no access key was present, create a random one and store it.
@@ -367,8 +368,13 @@ func (c *Client) encryptRecord(ctx context.Context, record *Record) error {
 		ak = randomSecretKey()
 		err = c.putAccessKey(ctx, record.Meta.WriterID, record.Meta.UserID, c.ClientID, record.Meta.Type, ak)
 		if err != nil {
-			return err
+			return nil, err
 		}
+	}
+
+	encryptedRecord := &Record{
+		Meta: record.Meta,
+		Data: make(map[string]string),
 	}
 
 	for k, v := range record.Data {
@@ -376,8 +382,8 @@ func (c *Client) encryptRecord(ctx context.Context, record *Record) error {
 		ef, efN := secretBoxEncryptToBase64([]byte(v), dk)
 		edk, edkN := secretBoxEncryptToBase64(dk[:], ak)
 
-		record.Data[k] = fmt.Sprintf("%s.%s.%s.%s", edk, edkN, ef, efN)
+		encryptedRecord.Data[k] = fmt.Sprintf("%s.%s.%s.%s", edk, edkN, ef, efN)
 	}
 
-	return nil
+	return encryptedRecord, nil
 }
