@@ -1,10 +1,12 @@
-hash: 69aea222521c820b7eb51ebf87555ed9afa71280ca5b91d143cb1c6121b913f6
-updated: 2017-04-25T20:20:37.992778585-07:00
+hash: e6cae80eb76c868d64d07c3ace55e8b27629245bf13e77bf450f9336f62b0642
+updated: 2017-04-25T20:59:41.773332317-07:00
 imports:
 - name: github.com/golang/protobuf
   version: 2bba0603135d7d7f5cb73b2125beeda19c09f4ef
   subpackages:
   - proto
+- name: github.com/jawher/mow.cli
+  version: d3ffbc2f98b83e09dc8efd55ecec75eb5fd656ec
 - name: github.com/mitchellh/go-homedir
   version: b8bc1bf767474819792c23f32d8286a45736f1c6
 - name: golang.org/x/crypto
