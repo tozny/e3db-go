@@ -258,7 +258,7 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer closeResp(resp)
 
 	fields := strings.SplitN(getEAK.EAK, ".", 2)
 	if len(fields) != 2 {
@@ -301,7 +301,7 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer closeResp(resp)
 
 	// TODO: Is this the best place to do this?
 	if c.akCache == nil {

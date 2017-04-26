@@ -14,6 +14,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -165,6 +167,11 @@ func (err *httpError) Error() string {
 	return err.message
 }
 
+func closeResp(resp *http.Response) {
+	io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
+}
+
 func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult interface{}) (*http.Response, error) {
 	if c.httpClient == nil {
 		config := clientcredentials.Config{
@@ -189,6 +196,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 	}
 
 	if !(resp.StatusCode >= 200 && resp.StatusCode <= 299) {
+		closeResp(resp)
 		return nil, &httpError{
 			StatusCode: resp.StatusCode,
 			URL:        req.URL.String(),
@@ -198,6 +206,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 
 	if jsonResult != nil {
 		if err := json.NewDecoder(resp.Body).Decode(jsonResult); err != nil {
+			closeResp(resp)
 			return nil, err
 		}
 	}
@@ -229,7 +238,7 @@ func (c *Client) GetClientInfo(ctx context.Context, clientID string) (*ClientInf
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer closeResp(resp)
 	return &info, nil
 }
 
@@ -264,7 +273,7 @@ func (c *Client) ReadRaw(ctx context.Context, recordID string) (*Record, error) 
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer closeResp(resp)
 	return &record, nil
 }
 
@@ -314,7 +323,7 @@ func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 		return "", err
 	}
 
-	defer resp.Body.Close()
+	defer closeResp(resp)
 	return encryptedRecord.Meta.RecordID, nil
 }
 
@@ -331,7 +340,7 @@ func (c *Client) Delete(ctx context.Context, recordID string) error {
 		return nil
 	}
 
-	defer resp.Body.Close()
+	defer closeResp(resp)
 	return nil
 }
 
@@ -374,7 +383,7 @@ func (c *Client) Share(ctx context.Context, recordType string, reader string) er
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer closeResp(resp)
 	return nil
 }
 
@@ -399,6 +408,6 @@ func (c *Client) Unshare(ctx context.Context, recordType string, reader string) 
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer closeResp(resp)
 	return nil
 }

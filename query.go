@@ -154,7 +154,6 @@ func (c *Client) search(ctx context.Context, q Q) (*searchResponse, error) {
 		return nil, err
 	}
 
-	defer resp.Body.Close()
-
+	defer closeResp(resp)
 	return &result, nil
 }

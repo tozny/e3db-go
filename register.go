@@ -84,6 +84,8 @@ func RegisterClient(email string, opts RegistrationOpts) (*ClientOpts, error) {
 		return nil, err
 	}
 
+	defer closeResp(resp)
+
 	if opts.Logging {
 		logResponse(resp)
 	}
@@ -93,8 +95,6 @@ func RegisterClient(email string, opts RegistrationOpts) (*ClientOpts, error) {
 	} else if resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("e3db.RegisterClient: server returned error %d", resp.StatusCode)
 	}
-
-	defer resp.Body.Close()
 
 	var regResp registerResponse
 	json.NewDecoder(resp.Body).Decode(&regResp)
