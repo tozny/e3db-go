@@ -42,10 +42,13 @@ $ glide get github.com/tozny/e3db-go
 ```
 
 If you aren't using Glide and want to depend on the latest
-version of E3DB, you can use `go get`:
+version of E3DB, check out the repository to the correct
+location within `$GOPATH` and install dependencies using Glide.
 
 ```shell
-$ go get github.com/tozny/e3db-go
+git clone https://github.com/tozny/e3db-go $GOPATH/src/github.com/tozny/e3db-go
+cd $GOPATH/src/github.com/tozny/e3db-go
+glide install
 ```
 
 ## Usage
