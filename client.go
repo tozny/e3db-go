@@ -19,14 +19,18 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"os/signal"
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"golang.org/x/oauth2/clientcredentials"
 )
 
 const defaultStorageURL = "https://api.dev.e3db.tozny.com/v1"
 const defaultAuthURL = "https://api.dev.tot.tozny.com/v1"
+const defaultEventsURL = "wss://api.dev.e3db.tozny.com/v1/events"
 
 type akCacheKey struct {
 	WriterID string
@@ -36,27 +40,29 @@ type akCacheKey struct {
 
 // ClientOpts contains options for configuring an E3DB client.
 type ClientOpts struct {
-	ClientID    string
-	APIKeyID    string
-	APISecret   string
-	PublicKey   publicKey
-	PrivateKey  privateKey
-	APIBaseURL  string
-	AuthBaseURL string
-	Logging     bool
+	ClientID      string
+	APIKeyID      string
+	APISecret     string
+	PublicKey     publicKey
+	PrivateKey    privateKey
+	APIBaseURL    string
+	AuthBaseURL   string
+	EventsBaseURL string
+	Logging       bool
 }
 
 // Client is an authenticated connection to the E3DB service, providing
 // access to end-to-end encrypted data stored in the database.
 type Client struct {
-	ClientID    string
-	APIKeyID    string
-	APISecret   string
-	PublicKey   publicKey
-	PrivateKey  privateKey
-	APIBaseURL  string
-	AuthBaseURL string
-	Logging     bool
+	ClientID      string
+	APIKeyID      string
+	APISecret     string
+	PublicKey     publicKey
+	PrivateKey    privateKey
+	APIBaseURL    string
+	AuthBaseURL   string
+	EventsBaseURL string
+	Logging       bool
 
 	httpClient *http.Client
 	akCache    map[akCacheKey]secretKey
@@ -94,6 +100,32 @@ type Record struct {
 	Data map[string]string `json:"data"`
 }
 
+// Channel contains information defining the channel to which a client
+// wishes to connect.
+type Channel struct {
+	Application string `json:"application"`
+	Type        string `json:"type"`
+	Subject     string `json:"subject"`
+}
+
+// Subscription wraps a subscribe/unsubscribe request for the event system
+type Subscription struct {
+	Action  string  `json:"action"`
+	Channel Channel `json:"subscription"`
+}
+
+// Event is an object representing the JSON blob dispatched from e3db in
+// response to serverside events.
+type Event struct {
+	Time        time.Time         `json:"time"`
+	Application string            `json:"application"`
+	Type        string            `json:"type"`
+	Action      string            `json:"action"`
+	Subject     string            `json:"subject"`
+	Producer    string            `json:"producer"`
+	Context     map[string]string `json:"context"`
+}
+
 // GetDefaultClient loads the default E3DB configuration profile and
 // creates a client using those options.
 func GetDefaultClient() (*Client, error) {
@@ -114,14 +146,15 @@ func GetDefaultClient() (*Client, error) {
 // 'GetConfig' to load options from a configuration profile.
 func GetClient(opts ClientOpts) (*Client, error) {
 	return &Client{
-		ClientID:    opts.ClientID,
-		APIBaseURL:  opts.APIBaseURL,
-		AuthBaseURL: opts.AuthBaseURL,
-		APIKeyID:    opts.APIKeyID,
-		APISecret:   opts.APISecret,
-		PublicKey:   opts.PublicKey,
-		PrivateKey:  opts.PrivateKey,
-		Logging:     opts.Logging,
+		ClientID:      opts.ClientID,
+		APIBaseURL:    opts.APIBaseURL,
+		AuthBaseURL:   opts.AuthBaseURL,
+		EventsBaseURL: opts.EventsBaseURL,
+		APIKeyID:      opts.APIKeyID,
+		APISecret:     opts.APISecret,
+		PublicKey:     opts.PublicKey,
+		PrivateKey:    opts.PrivateKey,
+		Logging:       opts.Logging,
 	}, nil
 }
 
@@ -139,6 +172,14 @@ func (c *Client) authURL() string {
 	}
 
 	return c.AuthBaseURL
+}
+
+func (c *Client) eventsURL() string {
+	if c.EventsBaseURL == "" {
+		return defaultEventsURL
+	}
+
+	return c.EventsBaseURL
 }
 
 func logRequest(req *http.Request) {
@@ -410,4 +451,81 @@ func (c *Client) Unshare(ctx context.Context, recordType string, reader string) 
 
 	defer closeResp(resp)
 	return nil
+}
+
+// Subscribe to a given event channel published by the e3db system
+func (c *Client) Subscribe(ctx context.Context, subscription Subscription, callback func(Event)) error {
+	// Get an auth token
+	config := clientcredentials.Config{
+		ClientID:     c.APIKeyID,
+		ClientSecret: c.APISecret,
+		TokenURL:     c.authURL() + "/token",
+	}
+
+	token, err := config.Token(ctx)
+	if err != nil {
+		return err
+	}
+
+	authHeader := make(http.Header)
+	authHeader.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+
+	// Set up interrupt flags
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+
+	u := fmt.Sprintf("%s/subscribe", c.eventsURL())
+	conn, _, err := websocket.DefaultDialer.Dial(u, authHeader)
+	if err != nil {
+		return err
+	}
+
+	defer conn.Close()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer conn.Close()
+		defer close(done)
+
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+
+			event := Event{}
+			json.Unmarshal(message, &event)
+
+			// Do something with the message
+			callback(event)
+		}
+	}()
+
+	// Send the subscription after a short delay (to allow for the connection to open)
+	go func() {
+		select {
+		case <-time.After(1 * time.Second):
+			buf, _ := json.Marshal(subscription)
+			writeErr := conn.WriteMessage(websocket.TextMessage, buf)
+			if writeErr != nil {
+				return
+			}
+		}
+	}()
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-interrupt:
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+			}
+			conn.Close()
+			return nil
+		}
+	}
 }

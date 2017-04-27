@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -347,6 +348,63 @@ func cmdRegister(cmd *cli.Cmd) {
 	}
 }
 
+func cmdSubscribe(cmd *cli.Cmd) {
+	app := cmd.String(cli.StringArg{
+		Name:      "APP",
+		Desc:      "application name",
+		Value:     "e3db",
+		HideValue: true,
+	})
+
+	eventType := cmd.String(cli.StringArg{
+		Name:      "TYPE",
+		Desc:      "channel type",
+		Value:     "",
+		HideValue: true,
+	})
+
+	clientID := cmd.String(cli.StringArg{
+		Name:      "CLIENT_ID",
+		Desc:      "client unique id or email",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Spec = "APP [TYPE] [CLIENT_ID]"
+
+	cmd.Action = func() {
+		client := options.getClient()
+
+		if *clientID == "" {
+			*clientID = client.ClientID
+		}
+		if *eventType == "" {
+			*eventType = "producer"
+		}
+
+		channel := e3db.Channel{
+			Application: *app,
+			Type:        *eventType,
+			Subject:     *clientID,
+		}
+		subscription := e3db.Subscription{
+			Action:  "attach",
+			Channel: channel,
+		}
+
+		callback := func(event e3db.Event) {
+			b, _ := json.Marshal(event)
+			log.Println(string(b))
+		}
+
+		err := client.Subscribe(context.Background(), subscription, callback)
+
+		if err != nil {
+			dieErr(err)
+		}
+	}
+}
+
 func main() {
 	app := cli.App("e3db-cli", "E3DB Command Line Interface")
 
@@ -363,5 +421,6 @@ func main() {
 	app.Command("delete", "delete a record", cmdDelete)
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
+	app.Command("subscribe", "subscribe to a stream of events produced by a client", cmdSubscribe)
 	app.Run(os.Args)
 }

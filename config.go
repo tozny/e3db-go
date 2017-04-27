@@ -18,11 +18,12 @@ import (
 )
 
 type configFile struct {
-	APIBaseURL  string `json:"api_url"`
-	AuthBaseURL string `json:"auth_url"`
-	APIKeyID    string `json:"api_key_id"`
-	APISecret   string `json:"api_secret"`
-	ClientID    string `json:"client_id"`
+	APIBaseURL    string `json:"api_url"`
+	AuthBaseURL   string `json:"auth_url"`
+	APIKeyID      string `json:"api_key_id"`
+	APISecret     string `json:"api_secret"`
+	ClientID      string `json:"client_id"`
+	EventsBaseURL string `json:"events_url"`
 }
 
 type keyFile struct {
@@ -77,14 +78,15 @@ func loadConfig(configPath, keyPath string) (*ClientOpts, error) {
 	}
 
 	return &ClientOpts{
-		ClientID:    config.ClientID,
-		APIBaseURL:  config.APIBaseURL,
-		AuthBaseURL: config.AuthBaseURL,
-		APIKeyID:    config.APIKeyID,
-		APISecret:   config.APISecret,
-		PublicKey:   pubKey,
-		PrivateKey:  privKey,
-		Logging:     false,
+		ClientID:      config.ClientID,
+		APIBaseURL:    config.APIBaseURL,
+		AuthBaseURL:   config.AuthBaseURL,
+		EventsBaseURL: config.EventsBaseURL,
+		APIKeyID:      config.APIKeyID,
+		APISecret:     config.APISecret,
+		PublicKey:     pubKey,
+		PrivateKey:    privKey,
+		Logging:       false,
 	}, nil
 }
 
