@@ -197,10 +197,11 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 
 	if !(resp.StatusCode >= 200 && resp.StatusCode <= 299) {
 		closeResp(resp)
+		u := req.URL.String()
 		return nil, &httpError{
 			StatusCode: resp.StatusCode,
-			URL:        req.URL.String(),
-			message:    fmt.Sprintf("e3db: server http error %d", resp.StatusCode),
+			URL:        u,
+			message:    fmt.Sprintf("e3db: %s: server http error %d", u, resp.StatusCode),
 		}
 	}
 
