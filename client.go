@@ -350,12 +350,7 @@ const denyReadPolicy = `{"deny": [{"read": {}}]}`
 
 // Share grants another e3db client permission to read records of the
 // specified record type.
-func (c *Client) Share(ctx context.Context, recordType string, reader string) error {
-	info, err := c.GetClientInfo(ctx, reader)
-	if err != nil {
-		return err
-	}
-
+func (c *Client) Share(ctx context.Context, recordType string, readerID string) error {
 	ak, err := c.getAccessKey(ctx, c.ClientID, c.ClientID, c.ClientID, recordType)
 	if err != nil {
 		return err
@@ -365,15 +360,12 @@ func (c *Client) Share(ctx context.Context, recordType string, reader string) er
 		return errors.New("no applicable records exist to share")
 	}
 
-	// FIXME: This makes an additional unnecessary request to obtain the
-	// reader's public key again. We probably should maintain a cache of
-	// these as well, but I do start to worry about invalidation...
-	err = c.putAccessKey(ctx, c.ClientID, c.ClientID, info.ClientID, recordType, ak)
+	err = c.putAccessKey(ctx, c.ClientID, c.ClientID, readerID, recordType, ak)
 	if err != nil {
 		return err
 	}
 
-	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, info.ClientID, recordType)
+	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(allowReadPolicy))
 	if err != nil {
 		return err
@@ -390,15 +382,10 @@ func (c *Client) Share(ctx context.Context, recordType string, reader string) er
 
 // Unshare revokes another e3db client's permission to read records of the
 // given record type.
-func (c *Client) Unshare(ctx context.Context, recordType string, reader string) error {
-	info, err := c.GetClientInfo(ctx, reader)
-	if err != nil {
-		return err
-	}
-
+func (c *Client) Unshare(ctx context.Context, recordType string, readerID string) error {
 	// TODO: Need to delete their access key!
 
-	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, info.ClientID, recordType)
+	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(denyReadPolicy))
 	if err != nil {
 		return err
