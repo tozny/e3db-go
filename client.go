@@ -337,7 +337,7 @@ func (c *Client) Delete(ctx context.Context, recordID string) error {
 
 	resp, err := c.rawCall(ctx, req, nil)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	defer closeResp(resp)
