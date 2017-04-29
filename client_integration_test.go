@@ -15,18 +15,26 @@ import (
 	"testing"
 )
 
+var testClient *Client
+
+const TEST_SHARE_CLIENT = "17d19999-f985-445b-a26a-7737d1b4e031"
+
 func getIntegrationTestClient() (*Client, error) {
+	if testClient != nil {
+		return testClient, nil
+	}
+
 	opts, err := GetConfig("integration-test")
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := GetClient(*opts)
+	testClient, err := GetClient(*opts)
 	if err != nil {
 		return nil, err
 	}
 
-	return client, nil
+	return testClient, nil
 }
 
 func TestGetClientInfo(t *testing.T) {
@@ -86,5 +94,24 @@ func TestWriteRead(t *testing.T) {
 
 	if rec1.Data["message"] != rec2.Data["message"] {
 		t.Errorf("Record field doesn't match: %s != %s", rec1.Data["message"], rec2.Data["message"])
+	}
+}
+
+func TestShare(t *testing.T) {
+	client, err := getIntegrationTestClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec1 := client.NewRecord("test-data")
+	rec1.Data["message"] = "Hello, world!"
+	_, err = client.Write(context.Background(), rec1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.Share(context.Background(), "test-data", TEST_SHARE_CLIENT)
+	if err != nil {
+		t.Error(err)
 	}
 }
