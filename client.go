@@ -97,7 +97,7 @@ type Record struct {
 // GetDefaultClient loads the default E3DB configuration profile and
 // creates a client using those options.
 func GetDefaultClient() (*Client, error) {
-	opts, err := loadConfig("~/.tozny/e3db.json", "~/.tozny/e3db_key.json")
+	opts, err := loadConfig("~/.tozny/e3db.json")
 	if err != nil {
 		return nil, err
 	}
