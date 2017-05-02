@@ -25,8 +25,7 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 )
 
-const defaultStorageURL = "https://api.dev.e3db.tozny.com/v1"
-const defaultAuthURL = "https://api.dev.tot.tozny.com/v1"
+const defaultStorageURL = "https://dev.e3db.com"
 
 type akCacheKey struct {
 	WriterID string
@@ -130,15 +129,7 @@ func (c *Client) apiURL() string {
 		return defaultStorageURL
 	}
 
-	return c.APIBaseURL
-}
-
-func (c *Client) authURL() string {
-	if c.AuthBaseURL == "" {
-		return defaultAuthURL
-	}
-
-	return c.AuthBaseURL
+	return strings.TrimRight(c.APIBaseURL, "/")
 }
 
 func logRequest(req *http.Request) {
@@ -177,7 +168,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 		config := clientcredentials.Config{
 			ClientID:     c.APIKeyID,
 			ClientSecret: c.APISecret,
-			TokenURL:     c.authURL() + "/token",
+			TokenURL:     c.apiURL() + "/v1/auth/token",
 		}
 		c.httpClient = config.Client(ctx)
 	}
@@ -221,10 +212,10 @@ func (c *Client) GetClientInfo(ctx context.Context, clientID string) (*ClientInf
 	var u, method string
 
 	if strings.Contains(clientID, "@") {
-		u = fmt.Sprintf("%s/clients/find?email=%s", c.apiURL(), url.QueryEscape(clientID))
+		u = fmt.Sprintf("%s/v1/storage/clients/find?email=%s", c.apiURL(), url.QueryEscape(clientID))
 		method = "POST"
 	} else {
-		u = fmt.Sprintf("%s/clients/%s", c.apiURL(), url.QueryEscape(clientID))
+		u = fmt.Sprintf("%s/v1/storage/clients/%s", c.apiURL(), url.QueryEscape(clientID))
 		method = "GET"
 	}
 
@@ -263,7 +254,7 @@ func (c *Client) getClientKey(ctx context.Context, clientID string) (publicKey, 
 // ReadRaw reads a record given a record ID and returns the record without
 // decrypting data fields.
 func (c *Client) ReadRaw(ctx context.Context, recordID string) (*Record, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/records/%s", c.apiURL(), recordID), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), recordID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +305,7 @@ func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 
 	buf := new(bytes.Buffer)
 	json.NewEncoder(buf).Encode(encryptedRecord)
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/records", c.apiURL()), buf)
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/storage/records", c.apiURL()), buf)
 	if err != nil {
 		return "", err
 	}
@@ -330,7 +321,7 @@ func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 
 // Delete deletes a record given a record ID.
 func (c *Client) Delete(ctx context.Context, recordID string) error {
-	u := fmt.Sprintf("%s/records/%s", c.apiURL(), url.QueryEscape(recordID))
+	u := fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), url.QueryEscape(recordID))
 	req, err := http.NewRequest("DELETE", u, nil)
 	if err != nil {
 		return err
@@ -365,7 +356,7 @@ func (c *Client) Share(ctx context.Context, recordType string, readerID string) 
 		return err
 	}
 
-	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
+	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(allowReadPolicy))
 	if err != nil {
 		return err
@@ -385,7 +376,7 @@ func (c *Client) Share(ctx context.Context, recordType string, readerID string) 
 func (c *Client) Unshare(ctx context.Context, recordType string, readerID string) error {
 	// TODO: Need to delete their access key!
 
-	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
+	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(denyReadPolicy))
 	if err != nil {
 		return err

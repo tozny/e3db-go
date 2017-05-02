@@ -143,7 +143,7 @@ func (c *Client) search(ctx context.Context, q Q) (*searchResponse, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/search", c.apiURL()), &buf)
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/storage/search", c.apiURL()), &buf)
 	if err != nil {
 		return nil, err
 	}

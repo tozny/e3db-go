@@ -43,13 +43,6 @@ func (opts *RegistrationOpts) apiURL() string {
 	return opts.APIBaseURL
 }
 
-func (opts *RegistrationOpts) authURL() string {
-	if opts.AuthBaseURL == "" {
-		return defaultAuthURL
-	}
-	return opts.AuthBaseURL
-}
-
 // RegisterClient creates a new E3DB client registration by submitting
 // a newly generated public key to the server. Returns a Registration
 // containing the generated keypair and API credentials. Often this will
@@ -70,7 +63,7 @@ func RegisterClient(email string, opts RegistrationOpts) (*ClientOpts, error) {
 
 	buf := new(bytes.Buffer)
 	json.NewEncoder(buf).Encode(&regReq)
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/clients", opts.apiURL()), buf)
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/storage/clients", opts.apiURL()), buf)
 	if err != nil {
 		return nil, err
 	}
@@ -100,12 +93,11 @@ func RegisterClient(email string, opts RegistrationOpts) (*ClientOpts, error) {
 	json.NewDecoder(resp.Body).Decode(&regResp)
 
 	return &ClientOpts{
-		ClientID:    regResp.ClientID,
-		APIBaseURL:  opts.apiURL(),
-		AuthBaseURL: opts.authURL(),
-		APIKeyID:    regResp.APIKeyID,
-		APISecret:   regResp.APISecret,
-		PublicKey:   pub,
-		PrivateKey:  priv,
+		ClientID:   regResp.ClientID,
+		APIBaseURL: opts.apiURL(),
+		APIKeyID:   regResp.APIKeyID,
+		APISecret:  regResp.APISecret,
+		PublicKey:  pub,
+		PrivateKey: priv,
 	}, nil
 }

@@ -19,14 +19,13 @@ import (
 )
 
 type configFile struct {
-	Version     int    `json:"version"`
-	APIBaseURL  string `json:"api_url"`
-	AuthBaseURL string `json:"auth_url"`
-	APIKeyID    string `json:"api_key_id"`
-	APISecret   string `json:"api_secret"`
-	ClientID    string `json:"client_id"`
-	PublicKey   string `json:"public_key"`
-	PrivateKey  string `json:"private_key"`
+	Version    int    `json:"version"`
+	APIBaseURL string `json:"api_url"`
+	APIKeyID   string `json:"api_key_id"`
+	APISecret  string `json:"api_secret"`
+	ClientID   string `json:"client_id"`
+	PublicKey  string `json:"public_key"`
+	PrivateKey string `json:"private_key"`
 }
 
 func loadJSON(path string, obj interface{}) error {
@@ -78,14 +77,13 @@ func loadConfig(configPath string) (*ClientOpts, error) {
 	}
 
 	return &ClientOpts{
-		ClientID:    config.ClientID,
-		APIBaseURL:  config.APIBaseURL,
-		AuthBaseURL: config.AuthBaseURL,
-		APIKeyID:    config.APIKeyID,
-		APISecret:   config.APISecret,
-		PublicKey:   pubKey,
-		PrivateKey:  privKey,
-		Logging:     false,
+		ClientID:   config.ClientID,
+		APIBaseURL: config.APIBaseURL,
+		APIKeyID:   config.APIKeyID,
+		APISecret:  config.APISecret,
+		PublicKey:  pubKey,
+		PrivateKey: privKey,
+		Logging:    false,
 	}, nil
 }
 
@@ -95,6 +93,7 @@ func saveConfig(configPath string, opts *ClientOpts) error {
 		return err
 	}
 
+	fmt.Println(path.Dir(configFullPath))
 	err = os.MkdirAll(path.Dir(configFullPath), 0700)
 	if err != nil {
 		return err
@@ -107,14 +106,13 @@ func saveConfig(configPath string, opts *ClientOpts) error {
 	defer configFd.Close()
 
 	configObj := configFile{
-		Version:     1,
-		ClientID:    opts.ClientID,
-		APIBaseURL:  opts.APIBaseURL,
-		AuthBaseURL: opts.AuthBaseURL,
-		APIKeyID:    opts.APIKeyID,
-		APISecret:   opts.APISecret,
-		PublicKey:   encodePublicKey(opts.PublicKey),
-		PrivateKey:  encodePrivateKey(opts.PrivateKey),
+		Version:    1,
+		ClientID:   opts.ClientID,
+		APIBaseURL: opts.APIBaseURL,
+		APIKeyID:   opts.APIKeyID,
+		APISecret:  opts.APISecret,
+		PublicKey:  encodePublicKey(opts.PublicKey),
+		PrivateKey: encodePrivateKey(opts.PrivateKey),
 	}
 
 	if err = json.NewEncoder(configFd).Encode(&configObj); err != nil {
