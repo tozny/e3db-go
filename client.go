@@ -144,15 +144,14 @@ func GetDefaultClient() (*Client, error) {
 // 'GetConfig' to load options from a configuration profile.
 func GetClient(opts ClientOpts) (*Client, error) {
 	return &Client{
-		ClientID:      opts.ClientID,
-		APIBaseURL:    opts.APIBaseURL,
-		AuthBaseURL:   opts.AuthBaseURL,
-		EventsBaseURL: opts.EventsBaseURL,
-		APIKeyID:      opts.APIKeyID,
-		APISecret:     opts.APISecret,
-		PublicKey:     opts.PublicKey,
-		PrivateKey:    opts.PrivateKey,
-		Logging:       opts.Logging,
+		ClientID:    opts.ClientID,
+		APIBaseURL:  opts.APIBaseURL,
+		AuthBaseURL: opts.AuthBaseURL,
+		APIKeyID:    opts.APIKeyID,
+		APISecret:   opts.APISecret,
+		PublicKey:   opts.PublicKey,
+		PrivateKey:  opts.PrivateKey,
+		Logging:     opts.Logging,
 	}, nil
 }
 
@@ -162,14 +161,6 @@ func (c *Client) apiURL() string {
 	}
 
 	return strings.TrimRight(c.APIBaseURL, "/")
-}
-
-func (c *Client) eventsURL() string {
-	if c.EventsBaseURL == "" {
-		return defaultEventsURL
-	}
-
-	return c.EventsBaseURL
 }
 
 func logRequest(req *http.Request) {
@@ -437,7 +428,7 @@ func (c *Client) Subscribe(ctx context.Context, subscription Subscription, callb
 	config := clientcredentials.Config{
 		ClientID:     c.APIKeyID,
 		ClientSecret: c.APISecret,
-		TokenURL:     c.authURL() + "/token",
+		TokenURL:     c.apiURL() + "/v1/auth/token",
 	}
 
 	token, err := config.Token(ctx)
@@ -452,7 +443,8 @@ func (c *Client) Subscribe(ctx context.Context, subscription Subscription, callb
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
-	u := fmt.Sprintf("%s/subscribe", c.eventsURL())
+	eventsURL := strings.Replace(strings.Replace(c.apiURL(), "https://", "wss://", 1), "http://", "ws://", 1)
+	u := fmt.Sprintf("%s/v1/events/subscribe", eventsURL)
 	conn, _, err := websocket.DefaultDialer.Dial(u, authHeader)
 	if err != nil {
 		return err
