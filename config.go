@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 
 	homedir "github.com/mitchellh/go-homedir"
 )
@@ -93,8 +93,7 @@ func saveConfig(configPath string, opts *ClientOpts) error {
 		return err
 	}
 
-	fmt.Println(path.Dir(configFullPath))
-	err = os.MkdirAll(path.Dir(configFullPath), 0700)
+	err = os.MkdirAll(filepath.Dir(configFullPath), 0700)
 	if err != nil {
 		return err
 	}
