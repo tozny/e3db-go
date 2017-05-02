@@ -240,7 +240,7 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 		return ak, nil
 	}
 
-	u := fmt.Sprintf("%s/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
+	u := fmt.Sprintf("%s/v1/storage/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -290,7 +290,7 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 	buf := new(bytes.Buffer)
 	json.NewEncoder(buf).Encode(&putEAKRequest{EAK: fmt.Sprintf("%s.%s", eak, eakN)})
 
-	u := fmt.Sprintf("%s/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
+	u := fmt.Sprintf("%s/v1/storage/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, buf)
 	if err != nil {
 		return err

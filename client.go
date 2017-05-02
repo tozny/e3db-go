@@ -28,9 +28,7 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 )
 
-const defaultStorageURL = "https://api.dev.e3db.tozny.com/v1"
-const defaultAuthURL = "https://api.dev.tot.tozny.com/v1"
-const defaultEventsURL = "wss://api.dev.e3db.tozny.com/v1/events"
+const defaultStorageURL = "https://dev.e3db.com"
 
 type akCacheKey struct {
 	WriterID string
@@ -129,7 +127,7 @@ type Event struct {
 // GetDefaultClient loads the default E3DB configuration profile and
 // creates a client using those options.
 func GetDefaultClient() (*Client, error) {
-	opts, err := loadConfig("~/.tozny/e3db.json", "~/.tozny/e3db_key.json")
+	opts, err := loadConfig("~/.tozny/e3db.json")
 	if err != nil {
 		return nil, err
 	}
@@ -163,15 +161,7 @@ func (c *Client) apiURL() string {
 		return defaultStorageURL
 	}
 
-	return c.APIBaseURL
-}
-
-func (c *Client) authURL() string {
-	if c.AuthBaseURL == "" {
-		return defaultAuthURL
-	}
-
-	return c.AuthBaseURL
+	return strings.TrimRight(c.APIBaseURL, "/")
 }
 
 func (c *Client) eventsURL() string {
@@ -218,7 +208,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 		config := clientcredentials.Config{
 			ClientID:     c.APIKeyID,
 			ClientSecret: c.APISecret,
-			TokenURL:     c.authURL() + "/token",
+			TokenURL:     c.apiURL() + "/v1/auth/token",
 		}
 		c.httpClient = config.Client(ctx)
 	}
@@ -238,10 +228,11 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 
 	if !(resp.StatusCode >= 200 && resp.StatusCode <= 299) {
 		closeResp(resp)
+		u := req.URL.String()
 		return nil, &httpError{
 			StatusCode: resp.StatusCode,
-			URL:        req.URL.String(),
-			message:    fmt.Sprintf("e3db: server http error %d", resp.StatusCode),
+			URL:        u,
+			message:    fmt.Sprintf("e3db: %s: server http error %d", u, resp.StatusCode),
 		}
 	}
 
@@ -261,10 +252,10 @@ func (c *Client) GetClientInfo(ctx context.Context, clientID string) (*ClientInf
 	var u, method string
 
 	if strings.Contains(clientID, "@") {
-		u = fmt.Sprintf("%s/clients/find?email=%s", c.apiURL(), url.QueryEscape(clientID))
+		u = fmt.Sprintf("%s/v1/storage/clients/find?email=%s", c.apiURL(), url.QueryEscape(clientID))
 		method = "POST"
 	} else {
-		u = fmt.Sprintf("%s/clients/%s", c.apiURL(), url.QueryEscape(clientID))
+		u = fmt.Sprintf("%s/v1/storage/clients/%s", c.apiURL(), url.QueryEscape(clientID))
 		method = "GET"
 	}
 
@@ -303,7 +294,7 @@ func (c *Client) getClientKey(ctx context.Context, clientID string) (publicKey, 
 // ReadRaw reads a record given a record ID and returns the record without
 // decrypting data fields.
 func (c *Client) ReadRaw(ctx context.Context, recordID string) (*Record, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/records/%s", c.apiURL(), recordID), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), recordID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +345,7 @@ func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 
 	buf := new(bytes.Buffer)
 	json.NewEncoder(buf).Encode(encryptedRecord)
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/records", c.apiURL()), buf)
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/storage/records", c.apiURL()), buf)
 	if err != nil {
 		return "", err
 	}
@@ -370,7 +361,7 @@ func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 
 // Delete deletes a record given a record ID.
 func (c *Client) Delete(ctx context.Context, recordID string) error {
-	u := fmt.Sprintf("%s/records/%s", c.apiURL(), url.QueryEscape(recordID))
+	u := fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), url.QueryEscape(recordID))
 	req, err := http.NewRequest("DELETE", u, nil)
 	if err != nil {
 		return err
@@ -378,7 +369,7 @@ func (c *Client) Delete(ctx context.Context, recordID string) error {
 
 	resp, err := c.rawCall(ctx, req, nil)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	defer closeResp(resp)
@@ -390,12 +381,7 @@ const denyReadPolicy = `{"deny": [{"read": {}}]}`
 
 // Share grants another e3db client permission to read records of the
 // specified record type.
-func (c *Client) Share(ctx context.Context, recordType string, reader string) error {
-	info, err := c.GetClientInfo(ctx, reader)
-	if err != nil {
-		return err
-	}
-
+func (c *Client) Share(ctx context.Context, recordType string, readerID string) error {
 	ak, err := c.getAccessKey(ctx, c.ClientID, c.ClientID, c.ClientID, recordType)
 	if err != nil {
 		return err
@@ -405,15 +391,12 @@ func (c *Client) Share(ctx context.Context, recordType string, reader string) er
 		return errors.New("no applicable records exist to share")
 	}
 
-	// FIXME: This makes an additional unnecessary request to obtain the
-	// reader's public key again. We probably should maintain a cache of
-	// these as well, but I do start to worry about invalidation...
-	err = c.putAccessKey(ctx, c.ClientID, c.ClientID, info.ClientID, recordType, ak)
+	err = c.putAccessKey(ctx, c.ClientID, c.ClientID, readerID, recordType, ak)
 	if err != nil {
 		return err
 	}
 
-	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, info.ClientID, recordType)
+	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(allowReadPolicy))
 	if err != nil {
 		return err
@@ -430,15 +413,10 @@ func (c *Client) Share(ctx context.Context, recordType string, reader string) er
 
 // Unshare revokes another e3db client's permission to read records of the
 // given record type.
-func (c *Client) Unshare(ctx context.Context, recordType string, reader string) error {
-	info, err := c.GetClientInfo(ctx, reader)
-	if err != nil {
-		return err
-	}
-
+func (c *Client) Unshare(ctx context.Context, recordType string, readerID string) error {
 	// TODO: Need to delete their access key!
 
-	u := fmt.Sprintf("%s/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, info.ClientID, recordType)
+	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(denyReadPolicy))
 	if err != nil {
 		return err

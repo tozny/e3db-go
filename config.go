@@ -9,25 +9,21 @@ package e3db
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 
 	homedir "github.com/mitchellh/go-homedir"
 )
 
 type configFile struct {
-	APIBaseURL    string `json:"api_url"`
-	AuthBaseURL   string `json:"auth_url"`
-	APIKeyID      string `json:"api_key_id"`
-	APISecret     string `json:"api_secret"`
-	ClientID      string `json:"client_id"`
-	EventsBaseURL string `json:"events_url"`
-}
-
-type keyFile struct {
 	Version    int    `json:"version"`
+	APIBaseURL string `json:"api_url"`
+	APIKeyID   string `json:"api_key_id"`
+	APISecret  string `json:"api_secret"`
+	ClientID   string `json:"client_id"`
 	PublicKey  string `json:"public_key"`
 	PrivateKey string `json:"private_key"`
 }
@@ -51,57 +47,53 @@ func loadJSON(path string, obj interface{}) error {
 	return nil
 }
 
-func loadConfig(configPath, keyPath string) (*ClientOpts, error) {
+func loadConfig(configPath string) (*ClientOpts, error) {
 	var config configFile
-	var key keyFile
 
 	if err := loadJSON(configPath, &config); err != nil {
 		return nil, err
 	}
 
-	if err := loadJSON(keyPath, &key); err != nil {
-		return nil, err
+	if config.Version != 1 {
+		return nil, fmt.Errorf("e3db.loadConfig: unsupported config version: %d", config.Version)
 	}
 
-	if key.Version != 1 {
-		return nil, fmt.Errorf("e3db.loadConfig: unsupported key file version: %d", key.Version)
+	if config.PublicKey == "" {
+		return nil, errors.New("e3db.loadConfig: missing public key")
 	}
 
-	pubKey, err := decodePublicKey(key.PublicKey)
+	if config.PrivateKey == "" {
+		return nil, errors.New("e3db.loadConfig: missing private key")
+	}
+
+	pubKey, err := decodePublicKey(config.PublicKey)
 	if err != nil {
 		return nil, err
 	}
 
-	privKey, err := decodePrivateKey(key.PrivateKey)
+	privKey, err := decodePrivateKey(config.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ClientOpts{
-		ClientID:      config.ClientID,
-		APIBaseURL:    config.APIBaseURL,
-		AuthBaseURL:   config.AuthBaseURL,
-		EventsBaseURL: config.EventsBaseURL,
-		APIKeyID:      config.APIKeyID,
-		APISecret:     config.APISecret,
-		PublicKey:     pubKey,
-		PrivateKey:    privKey,
-		Logging:       false,
+		ClientID:   config.ClientID,
+		APIBaseURL: config.APIBaseURL,
+		APIKeyID:   config.APIKeyID,
+		APISecret:  config.APISecret,
+		PublicKey:  pubKey,
+		PrivateKey: privKey,
+		Logging:    false,
 	}, nil
 }
 
-func saveConfig(configPath, keyPath string, opts *ClientOpts) error {
+func saveConfig(configPath string, opts *ClientOpts) error {
 	configFullPath, err := homedir.Expand(configPath)
 	if err != nil {
 		return err
 	}
 
-	keyFullPath, err := homedir.Expand(keyPath)
-	if err != nil {
-		return err
-	}
-
-	err = os.MkdirAll(path.Dir(keyFullPath), 0700)
+	err = os.MkdirAll(filepath.Dir(configFullPath), 0700)
 	if err != nil {
 		return err
 	}
@@ -112,31 +104,17 @@ func saveConfig(configPath, keyPath string, opts *ClientOpts) error {
 	}
 	defer configFd.Close()
 
-	keyFd, err := os.OpenFile(keyFullPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0400)
-	if err != nil {
-		return err
-	}
-	defer keyFd.Close()
-
 	configObj := configFile{
-		ClientID:    opts.ClientID,
-		APIBaseURL:  opts.APIBaseURL,
-		AuthBaseURL: opts.AuthBaseURL,
-		APIKeyID:    opts.APIKeyID,
-		APISecret:   opts.APISecret,
-	}
-
-	if err = json.NewEncoder(configFd).Encode(&configObj); err != nil {
-		return err
-	}
-
-	keyObj := keyFile{
 		Version:    1,
+		ClientID:   opts.ClientID,
+		APIBaseURL: opts.APIBaseURL,
+		APIKeyID:   opts.APIKeyID,
+		APISecret:  opts.APISecret,
 		PublicKey:  encodePublicKey(opts.PublicKey),
 		PrivateKey: encodePrivateKey(opts.PrivateKey),
 	}
 
-	if err = json.NewEncoder(keyFd).Encode(&keyObj); err != nil {
+	if err = json.NewEncoder(configFd).Encode(&configObj); err != nil {
 		return err
 	}
 
@@ -167,18 +145,13 @@ func ProfileExists(profile string) bool {
 // GetConfig loads an E3DB client configuration from a configuration
 // file given the name of the profile.
 func GetConfig(profile string) (*ClientOpts, error) {
-	opts, err := loadConfig(
-		fmt.Sprintf("~/.tozny/%s/e3db.json", profile),
-		fmt.Sprintf("~/.tozny/%s/e3db_key.json", profile))
+	opts, err := loadConfig(fmt.Sprintf("~/.tozny/%s/e3db.json", profile))
 	return opts, err
 }
 
 // SaveConfig writes an E3DB client configuration to a profile.
 func SaveConfig(profile string, opts *ClientOpts) error {
-	return saveConfig(
-		fmt.Sprintf("~/.tozny/%s/e3db.json", profile),
-		fmt.Sprintf("~/.tozny/%s/e3db_key.json", profile),
-		opts)
+	return saveConfig(fmt.Sprintf("~/.tozny/%s/e3db.json", profile), opts)
 }
 
 // SaveDefaultConfig writes an E3DB client configuration to a profile.
