@@ -292,13 +292,6 @@ func cmdRegister(cmd *cli.Cmd) {
 		HideValue: true,
 	})
 
-	authBaseURL := cmd.String(cli.StringOpt{
-		Name:      "auth",
-		Desc:      "e3db auth service base url",
-		Value:     "",
-		HideValue: true,
-	})
-
 	isPublic := cmd.Bool(cli.BoolOpt{
 		Name:      "public",
 		Desc:      "allow other clients to find you by email",
@@ -331,7 +324,6 @@ func cmdRegister(cmd *cli.Cmd) {
 
 		info, err := e3db.RegisterClient(*email, e3db.RegistrationOpts{
 			APIBaseURL:  *apiBaseURL,
-			AuthBaseURL: *authBaseURL,
 			Logging:     *options.Logging,
 			FindByEmail: *isPublic,
 		})

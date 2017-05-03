@@ -35,27 +35,25 @@ type akCacheKey struct {
 
 // ClientOpts contains options for configuring an E3DB client.
 type ClientOpts struct {
-	ClientID    string
-	APIKeyID    string
-	APISecret   string
-	PublicKey   publicKey
-	PrivateKey  privateKey
-	APIBaseURL  string
-	AuthBaseURL string
-	Logging     bool
+	ClientID   string
+	APIKeyID   string
+	APISecret  string
+	PublicKey  publicKey
+	PrivateKey privateKey
+	APIBaseURL string
+	Logging    bool
 }
 
 // Client is an authenticated connection to the E3DB service, providing
 // access to end-to-end encrypted data stored in the database.
 type Client struct {
-	ClientID    string
-	APIKeyID    string
-	APISecret   string
-	PublicKey   publicKey
-	PrivateKey  privateKey
-	APIBaseURL  string
-	AuthBaseURL string
-	Logging     bool
+	ClientID   string
+	APIKeyID   string
+	APISecret  string
+	PublicKey  publicKey
+	PrivateKey privateKey
+	APIBaseURL string
+	Logging    bool
 
 	httpClient *http.Client
 	akCache    map[akCacheKey]secretKey
@@ -113,14 +111,13 @@ func GetDefaultClient() (*Client, error) {
 // 'GetConfig' to load options from a configuration profile.
 func GetClient(opts ClientOpts) (*Client, error) {
 	return &Client{
-		ClientID:    opts.ClientID,
-		APIBaseURL:  opts.APIBaseURL,
-		AuthBaseURL: opts.AuthBaseURL,
-		APIKeyID:    opts.APIKeyID,
-		APISecret:   opts.APISecret,
-		PublicKey:   opts.PublicKey,
-		PrivateKey:  opts.PrivateKey,
-		Logging:     opts.Logging,
+		ClientID:   opts.ClientID,
+		APIBaseURL: opts.APIBaseURL,
+		APIKeyID:   opts.APIKeyID,
+		APISecret:  opts.APISecret,
+		PublicKey:  opts.PublicKey,
+		PrivateKey: opts.PrivateKey,
+		Logging:    opts.Logging,
 	}, nil
 }
 

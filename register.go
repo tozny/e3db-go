@@ -31,7 +31,6 @@ type registerResponse struct {
 // such as which server to register against and whether to log.
 type RegistrationOpts struct {
 	APIBaseURL  string
-	AuthBaseURL string
 	FindByEmail bool
 	Logging     bool
 }
