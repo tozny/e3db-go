@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -256,7 +257,9 @@ func cmdReadFile(cmd *cli.Cmd) {
 			dieErr(err)
 		}
 
-		f, err := os.Create(record.Data["filename"])
+		filename := filepath.Base(record.Data["filename"])
+
+		f, err := os.Create(filename)
 		if err != nil {
 			dieErr(err)
 		}
@@ -272,7 +275,7 @@ func cmdReadFile(cmd *cli.Cmd) {
 			dieErr(err)
 		}
 
-		fmt.Printf("Wrote %d bytes to file: %-20s\n", n, record.Data["filename"])
+		fmt.Printf("Wrote %d bytes to file: %-20s\n", n, filename)
 	}
 }
 
