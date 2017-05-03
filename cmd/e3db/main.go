@@ -199,12 +199,9 @@ func cmdWriteFile(cmd *cli.Cmd) {
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(f)
 
-		data := make(map[string]string)
-		data["filename"] = fi.Name()
-		data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
-		data["size"] = strconv.FormatInt(fi.Size(), 10)
-
-		record.Data = data
+		record.Data["filename"] = fi.Name()
+		record.Data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
+		record.Data["size"] = strconv.FormatInt(fi.Size(), 10)
 
 		id, err := client.Write(context.Background(), record)
 		if err != nil {
