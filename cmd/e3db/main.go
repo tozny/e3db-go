@@ -8,11 +8,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jawher/mow.cli"
@@ -23,6 +26,9 @@ type cliOptions struct {
 	Logging *bool
 	Profile *string
 }
+
+// MaxFileSize is the maximum number of bytes allowed for writefile commands.
+const MaxFileSize int64 = 1000000
 
 func dieErr(err error) {
 	fmt.Fprintf(os.Stderr, "e3db-cli: %s\n", err)
@@ -154,6 +160,58 @@ func cmdWrite(cmd *cli.Cmd) {
 	}
 }
 
+func cmdWriteFile(cmd *cli.Cmd) {
+	recordType := cmd.String(cli.StringArg{
+		Name:      "TYPE",
+		Desc:      "type of record to write",
+		Value:     "",
+		HideValue: true,
+	})
+
+	filename := cmd.String(cli.StringArg{
+		Name:      "FILENAME",
+		Desc:      "path to file to write to e3db",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		client := options.getClient()
+		record := client.NewRecord(*recordType)
+
+		f, err := os.Open(*filename)
+		if err != nil {
+			dieErr(err)
+		}
+		defer f.Close()
+
+		fi, err := f.Stat()
+		if err != nil {
+			dieErr(err)
+		}
+
+		// If the file is larger than 1MB, err
+		if fi.Size() > MaxFileSize {
+			dieErr(errors.New("Files must be less than 1MB in size."))
+		}
+
+		// Get the file itself
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(f)
+
+		record.Data["filename"] = fi.Name()
+		record.Data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
+		record.Data["size"] = strconv.FormatInt(fi.Size(), 10)
+
+		id, err := client.Write(context.Background(), record)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Println(id)
+	}
+}
+
 func cmdRead(cmd *cli.Cmd) {
 	recordIDs := cmd.Strings(cli.StringsArg{
 		Name:      "RECORD_ID",
@@ -179,6 +237,42 @@ func cmdRead(cmd *cli.Cmd) {
 
 			fmt.Println(string(bytes))
 		}
+	}
+}
+
+func cmdReadFile(cmd *cli.Cmd) {
+	recordID := cmd.String(cli.StringArg{
+		Name:      "RECORD_ID",
+		Desc:      "record ID to read",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		client := options.getClient()
+
+		record, err := client.Read(context.Background(), *recordID)
+		if err != nil {
+			dieErr(err)
+		}
+
+		f, err := os.Create(record.Data["filename"])
+		if err != nil {
+			dieErr(err)
+		}
+		defer f.Close()
+
+		contents, err := base64.RawURLEncoding.DecodeString(record.Data["contents"])
+		if err != nil {
+			dieErr(err)
+		}
+
+		n, err := f.Write(contents)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Printf("Wrote %d bytes to file: %-20s\n", n, record.Data["filename"])
 	}
 }
 
@@ -358,5 +452,9 @@ func main() {
 	app.Command("delete", "delete a record", cmdDelete)
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
+	app.Command("file", "work with small files", func(cmd *cli.Cmd) {
+		cmd.Command("read", "read a small file", cmdReadFile)
+		cmd.Command("write", "write a small file", cmdWriteFile)
+	})
 	app.Run(os.Args)
 }
