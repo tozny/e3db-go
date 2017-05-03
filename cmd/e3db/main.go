@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 
@@ -131,16 +132,29 @@ func cmdWrite(cmd *cli.Cmd) {
 
 	data := cmd.String(cli.StringArg{
 		Name:      "DATA",
-		Desc:      "json formatted record data",
+		Desc:      "json data or @FILENAME",
 		Value:     "",
 		HideValue: true,
 	})
 
 	cmd.Action = func() {
 		client := options.getClient()
-		record := client.NewRecord(*recordType)
+		var recordData string
 
-		err := json.NewDecoder(strings.NewReader(*data)).Decode(&record.Data)
+		dataRunes := []rune(*data)
+		if dataRunes[0] == '@' {
+			b, err := ioutil.ReadFile(string(dataRunes[1:]))
+			if err != nil {
+				dieErr(err)
+			}
+
+			recordData = string(b)
+		} else {
+			recordData = *data
+		}
+
+		record := client.NewRecord(*recordType)
+		err := json.NewDecoder(strings.NewReader(recordData)).Decode(&record.Data)
 		if err != nil {
 			dieErr(err)
 		}
