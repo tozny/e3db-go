@@ -19,8 +19,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
-	"os/signal"
 	"strings"
 	"time"
 
@@ -95,12 +93,6 @@ type Channel struct {
 	Application string `json:"application"`
 	Type        string `json:"type"`
 	Subject     string `json:"subject"`
-}
-
-// Subscription wraps a subscribe/unsubscribe request for the event system
-type Subscription struct {
-	Action  string  `json:"action"`
-	Channel Channel `json:"subscription"`
 }
 
 // Event is an object representing the JSON blob dispatched from e3db in
@@ -410,9 +402,14 @@ func (c *Client) Unshare(ctx context.Context, recordType string, readerID string
 
 // Connection represents an open socket to the e3db Event server.
 type Connection struct {
-	Commands chan Subscription
+	commands chan subscription
 	Events   chan Event
 	conn     *websocket.Conn
+}
+
+type subscription struct {
+	Action  string  `json:"action"`
+	Channel Channel `json:"subscription"`
 }
 
 // OpenConnection opens a websocket connection to the event server
@@ -439,11 +436,11 @@ func (c *Client) OpenConnection(ctx context.Context) (*Connection, error) {
 		return nil, err
 	}
 
-	commands := make(chan Subscription)
+	commands := make(chan subscription)
 	events := make(chan Event)
 
 	connection := Connection{
-		Commands: commands,
+		commands: commands,
 		Events:   events,
 		conn:     conn,
 	}
@@ -486,103 +483,25 @@ func (c *Client) OpenConnection(ctx context.Context) (*Connection, error) {
 
 // Subscribe to a specific event stream
 func (c *Connection) Subscribe(channel Channel) {
-	subscription := Subscription{
+	command := subscription{
 		Action:  "attach",
 		Channel: channel,
 	}
 
-	c.Commands <- subscription
+	c.commands <- command
 }
 
 // Unsubscribe from a specific event stream
 func (c *Connection) Unsubscribe(channel Channel) {
-	subscription := Subscription{
+	command := subscription{
 		Action:  "detach",
 		Channel: channel,
 	}
 
-	c.Commands <- subscription
+	c.commands <- command
 }
 
 // Close the underlying websocket connection
 func (c *Connection) Close() error {
 	return c.conn.Close()
-}
-
-// Subscribe to a given event channel published by the e3db system
-func (c *Client) Subscribe(ctx context.Context, subscription Subscription, callback func(Event)) error {
-	// Get an auth token
-	config := clientcredentials.Config{
-		ClientID:     c.Options.APIKeyID,
-		ClientSecret: c.Options.APISecret,
-		TokenURL:     c.apiURL() + "/v1/auth/token",
-	}
-
-	token, err := config.Token(ctx)
-	if err != nil {
-		return err
-	}
-
-	authHeader := make(http.Header)
-	authHeader.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
-
-	// Set up interrupt flags
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-
-	eventsURL := strings.Replace(strings.Replace(c.apiURL(), "https://", "wss://", 1), "http://", "ws://", 1)
-	u := fmt.Sprintf("%s/v1/events/subscribe", eventsURL)
-	conn, _, err := websocket.DefaultDialer.Dial(u, authHeader)
-	if err != nil {
-		return err
-	}
-
-	defer conn.Close()
-
-	done := make(chan struct{})
-
-	go func() {
-		defer conn.Close()
-		defer close(done)
-
-		for {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-
-			event := Event{}
-			json.Unmarshal(message, &event)
-
-			// Do something with the message
-			callback(event)
-		}
-	}()
-
-	// Send the subscription after a short delay (to allow for the connection to open)
-	go func() {
-		select {
-		case <-time.After(1 * time.Second):
-			buf, _ := json.Marshal(subscription)
-			writeErr := conn.WriteMessage(websocket.TextMessage, buf)
-			if writeErr != nil {
-				return
-			}
-		}
-	}()
-
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-interrupt:
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-			}
-			conn.Close()
-			return nil
-		}
-	}
 }
