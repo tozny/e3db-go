@@ -408,6 +408,107 @@ func (c *Client) Unshare(ctx context.Context, recordType string, readerID string
 	return nil
 }
 
+// Connection represents an open socket to the e3db Event server.
+type Connection struct {
+	Commands chan Subscription
+	Events   chan Event
+	conn     *websocket.Conn
+}
+
+// OpenConnection opens a websocket connection to the event server
+func (c *Client) OpenConnection(ctx context.Context) (*Connection, error) {
+	// Get an auth token
+	config := clientcredentials.Config{
+		ClientID:     c.Options.APIKeyID,
+		ClientSecret: c.Options.APISecret,
+		TokenURL:     c.apiURL() + "/v1/auth/token",
+	}
+
+	token, err := config.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	authHeader := make(http.Header)
+	authHeader.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+
+	eventsURL := strings.Replace(strings.Replace(c.apiURL(), "https://", "wss://", 1), "http://", "ws://", 1)
+	u := fmt.Sprintf("%s/v1/events/subscribe", eventsURL)
+	conn, _, err := websocket.DefaultDialer.Dial(u, authHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	commands := make(chan Subscription)
+	events := make(chan Event)
+
+	connection := Connection{
+		Commands: commands,
+		Events:   events,
+		conn:     conn,
+	}
+
+	done := make(chan struct{})
+
+	// Pipe events from the websocket to the channel
+	go func() {
+		defer conn.Close()
+		defer close(done)
+
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+
+			event := Event{}
+			json.Unmarshal(message, &event)
+
+			// Do something with the message
+			events <- event
+		}
+	}()
+
+	// Send subscriptions as they're added to the channel
+	go func() {
+		for {
+			subscription := <-commands
+			buf, _ := json.Marshal(subscription)
+			writeErr := conn.WriteMessage(websocket.TextMessage, buf)
+			if writeErr != nil {
+				return
+			}
+		}
+	}()
+
+	return &connection, nil
+}
+
+// Subscribe to a specific event stream
+func (c *Connection) Subscribe(channel Channel) {
+	subscription := Subscription{
+		Action:  "attach",
+		Channel: channel,
+	}
+
+	c.Commands <- subscription
+}
+
+// Unsubscribe from a specific event stream
+func (c *Connection) Unsubscribe(channel Channel) {
+	subscription := Subscription{
+		Action:  "detach",
+		Channel: channel,
+	}
+
+	c.Commands <- subscription
+}
+
+// Close the underlying websocket connection
+func (c *Connection) Close() error {
+	return c.conn.Close()
+}
+
 // Subscribe to a given event channel published by the e3db system
 func (c *Client) Subscribe(ctx context.Context, subscription Subscription, callback func(Event)) error {
 	// Get an auth token

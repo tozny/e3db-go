@@ -482,7 +482,7 @@ func cmdSubscribe(cmd *cli.Cmd) {
 		client := options.getClient()
 
 		if *clientID == "" {
-			*clientID = client.ClientID
+			*clientID = client.Options.ClientID
 		}
 		if *eventType == "" {
 			*eventType = "producer"
@@ -493,21 +493,26 @@ func cmdSubscribe(cmd *cli.Cmd) {
 			Type:        *eventType,
 			Subject:     *clientID,
 		}
-		subscription := e3db.Subscription{
-			Action:  "attach",
-			Channel: channel,
-		}
 
-		callback := func(event e3db.Event) {
-			b, _ := json.Marshal(event)
-			log.Println(string(b))
-		}
-
-		err := client.Subscribe(context.Background(), subscription, callback)
-
+		connection, err := client.OpenConnection(context.Background())
 		if err != nil {
 			dieErr(err)
 		}
+		defer connection.Close()
+
+		connection.Subscribe(channel)
+
+		go func() {
+			for {
+				event := <-connection.Events
+				b, _ := json.Marshal(event)
+				log.Println(string(b))
+			}
+		}()
+
+		var input string
+		fmt.Scanln(&input)
+		fmt.Println("done")
 	}
 }
 
