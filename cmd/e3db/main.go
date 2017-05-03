@@ -448,11 +448,13 @@ func main() {
 	app.Command("info", "get client information", cmdInfo)
 	app.Command("ls", "list records", cmdList)
 	app.Command("read", "read records", cmdRead)
-	app.Command("readfile", "read a small file", cmdReadFile)
 	app.Command("write", "write a record", cmdWrite)
-	app.Command("writefile", "write a small file", cmdWriteFile)
 	app.Command("delete", "delete a record", cmdDelete)
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
+	app.Command("file", "work with small files", func(cmd *cli.Cmd) {
+		cmd.Command("read", "read a small file", cmdReadFile)
+		cmd.Command("write", "write a small file", cmdWriteFile)
+	})
 	app.Run(os.Args)
 }
