@@ -17,7 +17,7 @@ import (
 
 var testClient *Client
 
-const TEST_SHARE_CLIENT = "17d19999-f985-445b-a26a-7737d1b4e031"
+const TEST_SHARE_CLIENT = "dac7899f-c474-4386-9ab8-f638dcc50dec"
 
 func getIntegrationTestClient() (*Client, error) {
 	if testClient != nil {
@@ -43,13 +43,13 @@ func TestGetClientInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	info, err := client.GetClientInfo(context.Background(), client.ClientID)
+	info, err := client.GetClientInfo(context.Background(), client.Options.ClientID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if info.ClientID != client.ClientID {
-		t.Errorf("Client IDs don't match: %s != %s", info.ClientID, client.ClientID)
+	if info.ClientID != client.Options.ClientID {
+		t.Errorf("Client IDs don't match: %s != %s", info.ClientID, client.Options.ClientID)
 	}
 
 	k, err := decodePublicKey(info.PublicKey.Curve25519)
@@ -57,8 +57,8 @@ func TestGetClientInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !bytes.Equal(k[:], client.PublicKey[:]) {
-		t.Errorf("Public keys don't match: %v != %v", k, client.PublicKey)
+	if !bytes.Equal(k[:], client.Options.PublicKey[:]) {
+		t.Errorf("Public keys don't match: %v != %v", k, client.Options.PublicKey)
 	}
 }
 

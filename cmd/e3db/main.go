@@ -216,10 +216,11 @@ func cmdInfo(cmd *cli.Cmd) {
 	cmd.Action = func() {
 		client := options.getClient()
 		if *clientID == "" {
-			fmt.Printf("Client ID:   %s\n", client.ClientID)
-			fmt.Printf("Public Key:  %s\n", base64.RawURLEncoding.EncodeToString(client.PublicKey[:]))
-			fmt.Printf("API Key ID:  %s\n", client.APIKeyID)
-			fmt.Printf("API Secret:  %s\n", client.APISecret)
+			fmt.Printf("Client ID:    %s\n", client.Options.ClientID)
+			fmt.Printf("Client Email: %s\n", client.Options.ClientEmail)
+			fmt.Printf("Public Key:   %s\n", base64.RawURLEncoding.EncodeToString(client.Options.PublicKey[:]))
+			fmt.Printf("API Key ID:   %s\n", client.Options.APIKeyID)
+			fmt.Printf("API Secret:   %s\n", client.Options.APISecret)
 		} else {
 			info, err := client.GetClientInfo(context.Background(), *clientID)
 			if err != nil {

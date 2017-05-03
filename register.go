@@ -92,11 +92,12 @@ func RegisterClient(email string, opts RegistrationOpts) (*ClientOpts, error) {
 	json.NewDecoder(resp.Body).Decode(&regResp)
 
 	return &ClientOpts{
-		ClientID:   regResp.ClientID,
-		APIBaseURL: opts.apiURL(),
-		APIKeyID:   regResp.APIKeyID,
-		APISecret:  regResp.APISecret,
-		PublicKey:  pub,
-		PrivateKey: priv,
+		ClientID:    regResp.ClientID,
+		ClientEmail: email,
+		APIBaseURL:  opts.apiURL(),
+		APIKeyID:    regResp.APIKeyID,
+		APISecret:   regResp.APISecret,
+		PublicKey:   pub,
+		PrivateKey:  priv,
 	}, nil
 }
