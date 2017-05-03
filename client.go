@@ -28,7 +28,7 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 )
 
-const defaultStorageURL = "https://dev.e3db.com"
+const defaultStorageURL = "https://api.e3db.com"
 
 type akCacheKey struct {
 	WriterID string
