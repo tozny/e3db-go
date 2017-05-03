@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -26,12 +27,8 @@ type cliOptions struct {
 	Profile *string
 }
 
-type DBFile struct {
-	Filename    string `json:"filename"`
-	ContentType string `json:"content-type"`
-	Contents    string `json:"contents"`
-	Size        int64  `json:"filesize"`
-}
+// MaxFileSize is the maximum number of bytes allowed for writefile commands.
+const MaxFileSize int64 = 1000000
 
 func dieErr(err error) {
 	fmt.Fprintf(os.Stderr, "e3db-cli: %s\n", err)
@@ -194,13 +191,16 @@ func cmdWriteFile(cmd *cli.Cmd) {
 		}
 
 		// If the file is larger than 1MB, err
+		if fi.Size() > MaxFileSize {
+			dieErr(errors.New("Files must be less than 1MB in size."))
+		}
 
 		// Get the file itself
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(f)
 
 		data := make(map[string]string)
-		data["filename"] = f.Name()
+		data["filename"] = fi.Name()
 		data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
 		data["size"] = strconv.FormatInt(fi.Size(), 10)
 
@@ -240,6 +240,42 @@ func cmdRead(cmd *cli.Cmd) {
 
 			fmt.Println(string(bytes))
 		}
+	}
+}
+
+func cmdReadFile(cmd *cli.Cmd) {
+	recordID := cmd.String(cli.StringArg{
+		Name:      "RECORD_ID",
+		Desc:      "record ID to read",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		client := options.getClient()
+
+		record, err := client.Read(context.Background(), *recordID)
+		if err != nil {
+			dieErr(err)
+		}
+
+		f, err := os.Create(record.Data["filename"])
+		if err != nil {
+			dieErr(err)
+		}
+		defer f.Close()
+
+		contents, err := base64.RawURLEncoding.DecodeString(record.Data["contents"])
+		if err != nil {
+			dieErr(err)
+		}
+
+		n, err := f.Write(contents)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Printf("Wrote %d bytes to file: %-20s\n", n, record.Data["filename"])
 	}
 }
 
@@ -415,6 +451,7 @@ func main() {
 	app.Command("info", "get client information", cmdInfo)
 	app.Command("ls", "list records", cmdList)
 	app.Command("read", "read records", cmdRead)
+	app.Command("readfile", "read a small file", cmdReadFile)
 	app.Command("write", "write a record", cmdWrite)
 	app.Command("writefile", "write a small file", cmdWriteFile)
 	app.Command("delete", "delete a record", cmdDelete)
