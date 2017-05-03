@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -66,13 +67,69 @@ func (o *cliOptions) getClient() *e3db.Client {
 
 var options cliOptions
 
+func doQuery(client *e3db.Client, useJSON bool, q *e3db.Q) {
+	cursor := client.Query(context.Background(), *q)
+	first := true
+	for {
+		record, err := cursor.Next()
+		if err == e3db.Done {
+			break
+		} else if err != nil {
+			dieErr(err)
+		}
+
+		if useJSON {
+			if first {
+				first = false
+				fmt.Println("[")
+			} else {
+				fmt.Printf(",\n")
+			}
+
+			bytes, _ := json.MarshalIndent(record, "  ", "  ")
+			fmt.Printf("  %s", bytes)
+		} else {
+			fmt.Printf("%-40s %s\n", record.Meta.RecordID, record.Meta.Type)
+		}
+	}
+
+	if useJSON {
+		fmt.Println("\n]")
+	}
+}
+
+func cmdRead(cmd *cli.Cmd) {
+	recordIDs := cmd.Strings(cli.StringsArg{
+		Name:      "RECORD_ID",
+		Value:     nil,
+		Desc:      "record IDs to read",
+		HideValue: true,
+	})
+
+	cmd.Spec = "RECORD_ID..."
+	cmd.Action = func() {
+		client := options.getClient()
+		doQuery(client, true, &e3db.Q{
+			RecordIDs:   *recordIDs,
+			IncludeData: true,
+		})
+	}
+}
+
 func cmdList(cmd *cli.Cmd) {
 	data := cmd.BoolOpt("d data", false, "include data in JSON format")
 	outputJSON := cmd.BoolOpt("j json", false, "output in JSON format")
 	contentTypes := cmd.StringsOpt("t type", nil, "record content types")
-	recordIDs := cmd.StringsOpt("r record", nil, "record IDs")
 	writerIDs := cmd.StringsOpt("w writer", nil, "record writer IDs or email addresses")
 	userIDs := cmd.StringsOpt("u user", nil, "record user IDs")
+	recordIDs := cmd.Strings(cli.StringsArg{
+		Name:      "RECORD_ID",
+		Value:     nil,
+		Desc:      "record IDs to read",
+		HideValue: true,
+	})
+
+	cmd.Spec = "[OPTIONS] [RECORD_ID...]"
 
 	cmd.Action = func() {
 		client := options.getClient()
@@ -90,41 +147,13 @@ func cmdList(cmd *cli.Cmd) {
 			}
 		}
 
-		cursor := client.Query(context.Background(), e3db.Q{
+		doQuery(client, *outputJSON, &e3db.Q{
 			ContentTypes: *contentTypes,
 			RecordIDs:    *recordIDs,
 			WriterIDs:    *writerIDs,
 			UserIDs:      *userIDs,
 			IncludeData:  *data,
 		})
-
-		first := true
-		for {
-			record, err := cursor.Next()
-			if err == e3db.Done {
-				break
-			} else if err != nil {
-				dieErr(err)
-			}
-
-			if *outputJSON {
-				if first {
-					first = false
-					fmt.Println("[")
-				} else {
-					fmt.Printf(",\n")
-				}
-
-				bytes, _ := json.MarshalIndent(record, "  ", "  ")
-				fmt.Printf("  %s", bytes)
-			} else {
-				fmt.Printf("%-40s %s\n", record.Meta.RecordID, record.Meta.Type)
-			}
-		}
-
-		if *outputJSON {
-			fmt.Println("\n]")
-		}
 	}
 }
 
@@ -138,16 +167,29 @@ func cmdWrite(cmd *cli.Cmd) {
 
 	data := cmd.String(cli.StringArg{
 		Name:      "DATA",
-		Desc:      "json formatted record data",
+		Desc:      "json data or @FILENAME",
 		Value:     "",
 		HideValue: true,
 	})
 
 	cmd.Action = func() {
 		client := options.getClient()
-		record := client.NewRecord(*recordType)
+		var recordData string
 
-		err := json.NewDecoder(strings.NewReader(*data)).Decode(&record.Data)
+		dataRunes := []rune(*data)
+		if dataRunes[0] == '@' {
+			b, err := ioutil.ReadFile(string(dataRunes[1:]))
+			if err != nil {
+				dieErr(err)
+			}
+
+			recordData = string(b)
+		} else {
+			recordData = *data
+		}
+
+		record := client.NewRecord(*recordType)
+		err := json.NewDecoder(strings.NewReader(recordData)).Decode(&record.Data)
 		if err != nil {
 			dieErr(err)
 		}
@@ -210,34 +252,6 @@ func cmdWriteFile(cmd *cli.Cmd) {
 		}
 
 		fmt.Println(id)
-	}
-}
-
-func cmdRead(cmd *cli.Cmd) {
-	recordIDs := cmd.Strings(cli.StringsArg{
-		Name:      "RECORD_ID",
-		Desc:      "record ID to read",
-		Value:     nil,
-		HideValue: true,
-	})
-
-	cmd.Spec = "RECORD_ID..."
-	cmd.Action = func() {
-		client := options.getClient()
-
-		for _, recordID := range *recordIDs {
-			record, err := client.Read(context.Background(), recordID)
-			if err != nil {
-				dieErr(err)
-			}
-
-			bytes, err := json.MarshalIndent(record, "", "  ")
-			if err != nil {
-				dieErr(err)
-			}
-
-			fmt.Println(string(bytes))
-		}
 	}
 }
 
@@ -450,8 +464,8 @@ func main() {
 	app.Command("register", "register a client", cmdRegister)
 	app.Command("info", "get client information", cmdInfo)
 	app.Command("ls", "list records", cmdList)
-	app.Command("read", "read records", cmdRead)
 	app.Command("write", "write a record", cmdWrite)
+	app.Command("read", "read records by ID", cmdRead)
 	app.Command("delete", "delete a record", cmdDelete)
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
