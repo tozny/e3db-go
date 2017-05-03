@@ -8,12 +8,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/jawher/mow.cli"
@@ -24,6 +29,9 @@ type cliOptions struct {
 	Logging *bool
 	Profile *string
 }
+
+// MaxFileSize is the maximum number of bytes allowed for writefile commands.
+const MaxFileSize int64 = 1000000
 
 func dieErr(err error) {
 	fmt.Fprintf(os.Stderr, "e3db-cli: %s\n", err)
@@ -60,13 +68,69 @@ func (o *cliOptions) getClient() *e3db.Client {
 
 var options cliOptions
 
+func doQuery(client *e3db.Client, useJSON bool, q *e3db.Q) {
+	cursor := client.Query(context.Background(), *q)
+	first := true
+	for {
+		record, err := cursor.Next()
+		if err == e3db.Done {
+			break
+		} else if err != nil {
+			dieErr(err)
+		}
+
+		if useJSON {
+			if first {
+				first = false
+				fmt.Println("[")
+			} else {
+				fmt.Printf(",\n")
+			}
+
+			bytes, _ := json.MarshalIndent(record, "  ", "  ")
+			fmt.Printf("  %s", bytes)
+		} else {
+			fmt.Printf("%-40s %s\n", record.Meta.RecordID, record.Meta.Type)
+		}
+	}
+
+	if useJSON {
+		fmt.Println("\n]")
+	}
+}
+
+func cmdRead(cmd *cli.Cmd) {
+	recordIDs := cmd.Strings(cli.StringsArg{
+		Name:      "RECORD_ID",
+		Value:     nil,
+		Desc:      "record IDs to read",
+		HideValue: true,
+	})
+
+	cmd.Spec = "RECORD_ID..."
+	cmd.Action = func() {
+		client := options.getClient()
+		doQuery(client, true, &e3db.Q{
+			RecordIDs:   *recordIDs,
+			IncludeData: true,
+		})
+	}
+}
+
 func cmdList(cmd *cli.Cmd) {
 	data := cmd.BoolOpt("d data", false, "include data in JSON format")
 	outputJSON := cmd.BoolOpt("j json", false, "output in JSON format")
 	contentTypes := cmd.StringsOpt("t type", nil, "record content types")
-	recordIDs := cmd.StringsOpt("r record", nil, "record IDs")
 	writerIDs := cmd.StringsOpt("w writer", nil, "record writer IDs or email addresses")
 	userIDs := cmd.StringsOpt("u user", nil, "record user IDs")
+	recordIDs := cmd.Strings(cli.StringsArg{
+		Name:      "RECORD_ID",
+		Value:     nil,
+		Desc:      "record IDs to read",
+		HideValue: true,
+	})
+
+	cmd.Spec = "[OPTIONS] [RECORD_ID...]"
 
 	cmd.Action = func() {
 		client := options.getClient()
@@ -84,39 +148,13 @@ func cmdList(cmd *cli.Cmd) {
 			}
 		}
 
-		cursor := client.Query(context.Background(), e3db.Q{
+		doQuery(client, *outputJSON, &e3db.Q{
 			ContentTypes: *contentTypes,
 			RecordIDs:    *recordIDs,
 			WriterIDs:    *writerIDs,
 			UserIDs:      *userIDs,
 			IncludeData:  *data,
 		})
-
-		first := true
-		for cursor.Next() {
-			record, err := cursor.Get()
-			if err != nil {
-				dieErr(err)
-			}
-
-			if *outputJSON {
-				if first {
-					first = false
-					fmt.Println("[")
-				} else {
-					fmt.Printf(",\n")
-				}
-
-				bytes, _ := json.MarshalIndent(record, "  ", "  ")
-				fmt.Printf("  %s", bytes)
-			} else {
-				fmt.Printf("%-40s %s\n", record.Meta.RecordID, record.Meta.Type)
-			}
-		}
-
-		if *outputJSON {
-			fmt.Println("\n]")
-		}
 	}
 }
 
@@ -130,16 +168,29 @@ func cmdWrite(cmd *cli.Cmd) {
 
 	data := cmd.String(cli.StringArg{
 		Name:      "DATA",
-		Desc:      "json formatted record data",
+		Desc:      "json data or @FILENAME",
 		Value:     "",
 		HideValue: true,
 	})
 
 	cmd.Action = func() {
 		client := options.getClient()
-		record := client.NewRecord(*recordType)
+		var recordData string
 
-		err := json.NewDecoder(strings.NewReader(*data)).Decode(&record.Data)
+		dataRunes := []rune(*data)
+		if dataRunes[0] == '@' {
+			b, err := ioutil.ReadFile(string(dataRunes[1:]))
+			if err != nil {
+				dieErr(err)
+			}
+
+			recordData = string(b)
+		} else {
+			recordData = *data
+		}
+
+		record := client.NewRecord(*recordType)
+		err := json.NewDecoder(strings.NewReader(recordData)).Decode(&record.Data)
 		if err != nil {
 			dieErr(err)
 		}
@@ -153,31 +204,93 @@ func cmdWrite(cmd *cli.Cmd) {
 	}
 }
 
-func cmdRead(cmd *cli.Cmd) {
-	recordIDs := cmd.Strings(cli.StringsArg{
-		Name:      "RECORD_ID",
-		Desc:      "record ID to read",
-		Value:     nil,
+func cmdWriteFile(cmd *cli.Cmd) {
+	recordType := cmd.String(cli.StringArg{
+		Name:      "TYPE",
+		Desc:      "type of record to write",
+		Value:     "",
 		HideValue: true,
 	})
 
-	cmd.Spec = "RECORD_ID..."
+	filename := cmd.String(cli.StringArg{
+		Name:      "FILENAME",
+		Desc:      "path to file to write to e3db",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		client := options.getClient()
+		record := client.NewRecord(*recordType)
+
+		f, err := os.Open(*filename)
+		if err != nil {
+			dieErr(err)
+		}
+		defer f.Close()
+
+		fi, err := f.Stat()
+		if err != nil {
+			dieErr(err)
+		}
+
+		// If the file is larger than 1MB, err
+		if fi.Size() > MaxFileSize {
+			dieErr(errors.New("Files must be less than 1MB in size."))
+		}
+
+		// Get the file itself
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(f)
+
+		record.Data["filename"] = fi.Name()
+		record.Data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
+		record.Data["size"] = strconv.FormatInt(fi.Size(), 10)
+
+		id, err := client.Write(context.Background(), record)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Println(id)
+	}
+}
+
+func cmdReadFile(cmd *cli.Cmd) {
+	recordID := cmd.String(cli.StringArg{
+		Name:      "RECORD_ID",
+		Desc:      "record ID to read",
+		Value:     "",
+		HideValue: true,
+	})
+
 	cmd.Action = func() {
 		client := options.getClient()
 
-		for _, recordID := range *recordIDs {
-			record, err := client.Read(context.Background(), recordID)
-			if err != nil {
-				dieErr(err)
-			}
-
-			bytes, err := json.MarshalIndent(record, "", "  ")
-			if err != nil {
-				dieErr(err)
-			}
-
-			fmt.Println(string(bytes))
+		record, err := client.Read(context.Background(), *recordID)
+		if err != nil {
+			dieErr(err)
 		}
+
+		filename := filepath.Base(record.Data["filename"])
+
+		f, err := os.Create(filename)
+		if err != nil {
+			dieErr(err)
+		}
+		defer f.Close()
+
+		contents, err := base64.RawURLEncoding.DecodeString(record.Data["contents"])
+		if err != nil {
+			dieErr(err)
+		}
+
+		n, err := f.Write(contents)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Printf("Wrote %d bytes to file: %-20s\n", n, filename)
 	}
 }
 
@@ -215,10 +328,11 @@ func cmdInfo(cmd *cli.Cmd) {
 	cmd.Action = func() {
 		client := options.getClient()
 		if *clientID == "" {
-			fmt.Printf("Client ID:   %s\n", client.ClientID)
-			fmt.Printf("Public Key:  %s\n", base64.RawURLEncoding.EncodeToString(client.PublicKey[:]))
-			fmt.Printf("API Key ID:  %s\n", client.APIKeyID)
-			fmt.Printf("API Secret:  %s\n", client.APISecret)
+			fmt.Printf("Client ID:    %s\n", client.Options.ClientID)
+			fmt.Printf("Client Email: %s\n", client.Options.ClientEmail)
+			fmt.Printf("Public Key:   %s\n", base64.RawURLEncoding.EncodeToString(client.Options.PublicKey[:]))
+			fmt.Printf("API Key ID:   %s\n", client.Options.APIKeyID)
+			fmt.Printf("API Secret:   %s\n", client.Options.APISecret)
 		} else {
 			info, err := client.GetClientInfo(context.Background(), *clientID)
 			if err != nil {
@@ -293,13 +407,6 @@ func cmdRegister(cmd *cli.Cmd) {
 		HideValue: true,
 	})
 
-	authBaseURL := cmd.String(cli.StringOpt{
-		Name:      "auth",
-		Desc:      "e3db auth service base url",
-		Value:     "",
-		HideValue: true,
-	})
-
 	isPublic := cmd.Bool(cli.BoolOpt{
 		Name:      "public",
 		Desc:      "allow other clients to find you by email",
@@ -332,7 +439,6 @@ func cmdRegister(cmd *cli.Cmd) {
 
 		info, err := e3db.RegisterClient(*email, e3db.RegistrationOpts{
 			APIBaseURL:  *apiBaseURL,
-			AuthBaseURL: *authBaseURL,
 			Logging:     *options.Logging,
 			FindByEmail: *isPublic,
 		})
@@ -416,11 +522,15 @@ func main() {
 	app.Command("register", "register a client", cmdRegister)
 	app.Command("info", "get client information", cmdInfo)
 	app.Command("ls", "list records", cmdList)
-	app.Command("read", "read records", cmdRead)
 	app.Command("write", "write a record", cmdWrite)
+	app.Command("read", "read records by ID", cmdRead)
 	app.Command("delete", "delete a record", cmdDelete)
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
 	app.Command("subscribe", "subscribe to a stream of events produced by a client", cmdSubscribe)
+	app.Command("file", "work with small files", func(cmd *cli.Cmd) {
+		cmd.Command("read", "read a small file", cmdReadFile)
+		cmd.Command("write", "write a small file", cmdWriteFile)
+	})
 	app.Run(os.Args)
 }

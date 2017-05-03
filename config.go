@@ -15,17 +15,18 @@ import (
 	"os"
 	"path/filepath"
 
-	homedir "github.com/mitchellh/go-homedir"
+	"github.com/mitchellh/go-homedir"
 )
 
 type configFile struct {
-	Version    int    `json:"version"`
-	APIBaseURL string `json:"api_url"`
-	APIKeyID   string `json:"api_key_id"`
-	APISecret  string `json:"api_secret"`
-	ClientID   string `json:"client_id"`
-	PublicKey  string `json:"public_key"`
-	PrivateKey string `json:"private_key"`
+	Version     int    `json:"version"`
+	APIBaseURL  string `json:"api_url"`
+	APIKeyID    string `json:"api_key_id"`
+	APISecret   string `json:"api_secret"`
+	ClientID    string `json:"client_id"`
+	ClientEmail string `json:"client_email"`
+	PublicKey   string `json:"public_key"`
+	PrivateKey  string `json:"private_key"`
 }
 
 func loadJSON(path string, obj interface{}) error {
@@ -77,13 +78,14 @@ func loadConfig(configPath string) (*ClientOpts, error) {
 	}
 
 	return &ClientOpts{
-		ClientID:   config.ClientID,
-		APIBaseURL: config.APIBaseURL,
-		APIKeyID:   config.APIKeyID,
-		APISecret:  config.APISecret,
-		PublicKey:  pubKey,
-		PrivateKey: privKey,
-		Logging:    false,
+		ClientID:    config.ClientID,
+		ClientEmail: config.ClientEmail,
+		APIBaseURL:  config.APIBaseURL,
+		APIKeyID:    config.APIKeyID,
+		APISecret:   config.APISecret,
+		PublicKey:   pubKey,
+		PrivateKey:  privKey,
+		Logging:     false,
 	}, nil
 }
 
@@ -105,13 +107,14 @@ func saveConfig(configPath string, opts *ClientOpts) error {
 	defer configFd.Close()
 
 	configObj := configFile{
-		Version:    1,
-		ClientID:   opts.ClientID,
-		APIBaseURL: opts.APIBaseURL,
-		APIKeyID:   opts.APIKeyID,
-		APISecret:  opts.APISecret,
-		PublicKey:  encodePublicKey(opts.PublicKey),
-		PrivateKey: encodePrivateKey(opts.PrivateKey),
+		Version:     1,
+		ClientID:    opts.ClientID,
+		ClientEmail: opts.ClientEmail,
+		APIBaseURL:  opts.APIBaseURL,
+		APIKeyID:    opts.APIKeyID,
+		APISecret:   opts.APISecret,
+		PublicKey:   encodePublicKey(opts.PublicKey),
+		PrivateKey:  encodePrivateKey(opts.PrivateKey),
 	}
 
 	if err = json.NewEncoder(configFd).Encode(&configObj); err != nil {
@@ -140,6 +143,11 @@ func ProfileExists(profile string) bool {
 	configExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db.json", profile))
 	keyExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db_key.json", profile))
 	return configExists && keyExists
+}
+
+// DefaultConfig loads the default E3DB configuration.
+func DefaultConfig() (*ClientOpts, error) {
+	return loadConfig(fmt.Sprintf("~/.tozny/e3db.json"))
 }
 
 // GetConfig loads an E3DB client configuration from a configuration

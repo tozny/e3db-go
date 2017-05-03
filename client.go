@@ -39,26 +39,19 @@ type akCacheKey struct {
 // ClientOpts contains options for configuring an E3DB client.
 type ClientOpts struct {
 	ClientID    string
+	ClientEmail string
 	APIKeyID    string
 	APISecret   string
 	PublicKey   publicKey
 	PrivateKey  privateKey
 	APIBaseURL  string
-	AuthBaseURL string
 	Logging     bool
 }
 
 // Client is an authenticated connection to the E3DB service, providing
 // access to end-to-end encrypted data stored in the database.
 type Client struct {
-	ClientID    string
-	APIKeyID    string
-	APISecret   string
-	PublicKey   publicKey
-	PrivateKey  privateKey
-	APIBaseURL  string
-	AuthBaseURL string
-	Logging     bool
+	Options ClientOpts
 
 	httpClient *http.Client
 	akCache    map[akCacheKey]secretKey
@@ -125,7 +118,7 @@ type Event struct {
 // GetDefaultClient loads the default E3DB configuration profile and
 // creates a client using those options.
 func GetDefaultClient() (*Client, error) {
-	opts, err := loadConfig("~/.tozny/e3db.json")
+	opts, err := DefaultConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -142,23 +135,16 @@ func GetDefaultClient() (*Client, error) {
 // 'GetConfig' to load options from a configuration profile.
 func GetClient(opts ClientOpts) (*Client, error) {
 	return &Client{
-		ClientID:    opts.ClientID,
-		APIBaseURL:  opts.APIBaseURL,
-		AuthBaseURL: opts.AuthBaseURL,
-		APIKeyID:    opts.APIKeyID,
-		APISecret:   opts.APISecret,
-		PublicKey:   opts.PublicKey,
-		PrivateKey:  opts.PrivateKey,
-		Logging:     opts.Logging,
+		Options: opts,
 	}, nil
 }
 
 func (c *Client) apiURL() string {
-	if c.APIBaseURL == "" {
+	if c.Options.APIBaseURL == "" {
 		return defaultStorageURL
 	}
 
-	return strings.TrimRight(c.APIBaseURL, "/")
+	return strings.TrimRight(c.Options.APIBaseURL, "/")
 }
 
 func logRequest(req *http.Request) {
@@ -195,14 +181,14 @@ func closeResp(resp *http.Response) {
 func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult interface{}) (*http.Response, error) {
 	if c.httpClient == nil {
 		config := clientcredentials.Config{
-			ClientID:     c.APIKeyID,
-			ClientSecret: c.APISecret,
+			ClientID:     c.Options.APIKeyID,
+			ClientSecret: c.Options.APISecret,
 			TokenURL:     c.apiURL() + "/v1/auth/token",
 		}
 		c.httpClient = config.Client(ctx)
 	}
 
-	if c.Logging {
+	if c.Options.Logging {
 		logRequest(req)
 	}
 
@@ -211,7 +197,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 		return nil, err
 	}
 
-	if c.Logging {
+	if c.Options.Logging {
 		logResponse(resp)
 	}
 
@@ -317,8 +303,8 @@ func (c *Client) NewRecord(recordType string) *Record {
 	return &Record{
 		Meta: Meta{
 			Type:     recordType,
-			WriterID: c.ClientID,
-			UserID:   c.ClientID, // for now
+			WriterID: c.Options.ClientID,
+			UserID:   c.Options.ClientID, // for now
 		},
 		Data: make(map[string]string),
 	}
@@ -371,7 +357,8 @@ const denyReadPolicy = `{"deny": [{"read": {}}]}`
 // Share grants another e3db client permission to read records of the
 // specified record type.
 func (c *Client) Share(ctx context.Context, recordType string, readerID string) error {
-	ak, err := c.getAccessKey(ctx, c.ClientID, c.ClientID, c.ClientID, recordType)
+	id := c.Options.ClientID
+	ak, err := c.getAccessKey(ctx, id, id, id, recordType)
 	if err != nil {
 		return err
 	}
@@ -380,12 +367,12 @@ func (c *Client) Share(ctx context.Context, recordType string, readerID string) 
 		return errors.New("no applicable records exist to share")
 	}
 
-	err = c.putAccessKey(ctx, c.ClientID, c.ClientID, readerID, recordType, ak)
+	err = c.putAccessKey(ctx, id, id, readerID, recordType, ak)
 	if err != nil {
 		return err
 	}
 
-	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
+	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), id, id, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(allowReadPolicy))
 	if err != nil {
 		return err
@@ -405,7 +392,8 @@ func (c *Client) Share(ctx context.Context, recordType string, readerID string) 
 func (c *Client) Unshare(ctx context.Context, recordType string, readerID string) error {
 	// TODO: Need to delete their access key!
 
-	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), c.ClientID, c.ClientID, readerID, recordType)
+	id := c.Options.ClientID
+	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), id, id, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(denyReadPolicy))
 	if err != nil {
 		return err
