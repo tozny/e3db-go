@@ -8,11 +8,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jawher/mow.cli"
@@ -22,6 +24,13 @@ import (
 type cliOptions struct {
 	Logging *bool
 	Profile *string
+}
+
+type DBFile struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content-type"`
+	Contents    string `json:"contents"`
+	Size        int64  `json:"filesize"`
 }
 
 func dieErr(err error) {
@@ -144,6 +153,58 @@ func cmdWrite(cmd *cli.Cmd) {
 		if err != nil {
 			dieErr(err)
 		}
+
+		id, err := client.Write(context.Background(), record)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Println(id)
+	}
+}
+
+func cmdWriteFile(cmd *cli.Cmd) {
+	recordType := cmd.String(cli.StringArg{
+		Name:      "TYPE",
+		Desc:      "type of record to write",
+		Value:     "",
+		HideValue: true,
+	})
+
+	filename := cmd.String(cli.StringArg{
+		Name:      "FILENAME",
+		Desc:      "path to file to write to e3db",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		client := options.getClient()
+		record := client.NewRecord(*recordType)
+
+		f, err := os.Open(*filename)
+		if err != nil {
+			dieErr(err)
+		}
+		defer f.Close()
+
+		fi, err := f.Stat()
+		if err != nil {
+			dieErr(err)
+		}
+
+		// If the file is larger than 1MB, err
+
+		// Get the file itself
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(f)
+
+		data := make(map[string]string)
+		data["filename"] = f.Name()
+		data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
+		data["size"] = strconv.FormatInt(fi.Size(), 10)
+
+		record.Data = data
 
 		id, err := client.Write(context.Background(), record)
 		if err != nil {
@@ -355,6 +416,7 @@ func main() {
 	app.Command("ls", "list records", cmdList)
 	app.Command("read", "read records", cmdRead)
 	app.Command("write", "write a record", cmdWrite)
+	app.Command("writefile", "write a small file", cmdWriteFile)
 	app.Command("delete", "delete a record", cmdDelete)
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
