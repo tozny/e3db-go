@@ -469,8 +469,8 @@ func (c *Client) OpenConnection(ctx context.Context) (*Connection, error) {
 	// Send subscriptions as they're added to the channel
 	go func() {
 		for {
-			subscription := <-commands
-			buf, _ := json.Marshal(subscription)
+			command := <-commands
+			buf, _ := json.Marshal(command)
 			writeErr := conn.WriteMessage(websocket.TextMessage, buf)
 			if writeErr != nil {
 				return
