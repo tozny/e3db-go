@@ -412,8 +412,8 @@ func (c *Client) Unshare(ctx context.Context, recordType string, readerID string
 func (c *Client) Subscribe(ctx context.Context, subscription Subscription, callback func(Event)) error {
 	// Get an auth token
 	config := clientcredentials.Config{
-		ClientID:     c.APIKeyID,
-		ClientSecret: c.APISecret,
+		ClientID:     c.Options.APIKeyID,
+		ClientSecret: c.Options.APISecret,
 		TokenURL:     c.apiURL() + "/v1/auth/token",
 	}
 
