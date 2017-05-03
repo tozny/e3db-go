@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -55,17 +56,14 @@ type Cursor struct {
 	client   *Client         // e3db client object
 	ctx      context.Context // execution context
 	index    int             // current position in 'response'
-	err      error           // last error to report
 }
 
-// Next advances the cursor to the next position (if available), and
-// return true if the cursor is at a valid item.
-func (c *Cursor) Next() bool {
-	// Stop iteration once we've hit an error.
-	if c.err != nil {
-		return false
-	}
+// Done is returned by Next when iteration is complete.
+var Done = errors.New("iteration complete")
 
+// Next returns the item at the current iterator position (if one is
+// available).
+func (c *Cursor) Next() (*Record, error) {
 	var err error
 
 	// If there is no response, or we've read all its results, perform
@@ -77,18 +75,17 @@ func (c *Cursor) Next() bool {
 			// If the previous response was shorter than a full page,
 			// we know we've reached the end of the result set.
 			if len(c.response.Results) < c.query.Count {
-				return false
+				return nil, Done
 			}
 		}
 
 		c.response, err = c.client.search(c.ctx, c.query)
 		if err != nil {
-			c.err = err
-			return false
+			return nil, err
 		}
 
 		if len(c.response.Results) == 0 {
-			return false
+			return nil, Done
 		}
 
 		c.index = 0
@@ -96,20 +93,10 @@ func (c *Cursor) Next() bool {
 		c.index++
 	}
 
-	return true
-}
-
-// Get returns the record at the current cursor position.
-func (c *Cursor) Get() (*Record, error) {
-	if c.err != nil {
-		return nil, c.err
-	}
-
 	record := c.response.Results[c.index].toRecord()
 	if c.query.IncludeData {
 		err := c.client.decryptRecord(c.ctx, record)
 		if err != nil {
-			c.err = err
 			return nil, err
 		}
 	}

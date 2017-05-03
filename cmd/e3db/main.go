@@ -92,9 +92,11 @@ func cmdList(cmd *cli.Cmd) {
 		})
 
 		first := true
-		for cursor.Next() {
-			record, err := cursor.Get()
-			if err != nil {
+		for {
+			record, err := cursor.Next()
+			if err == e3db.Done {
+				break
+			} else if err != nil {
 				dieErr(err)
 			}
 

@@ -15,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
-	homedir "github.com/mitchellh/go-homedir"
+	"github.com/mitchellh/go-homedir"
 )
 
 type configFile struct {
@@ -140,6 +140,11 @@ func ProfileExists(profile string) bool {
 	configExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db.json", profile))
 	keyExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db_key.json", profile))
 	return configExists && keyExists
+}
+
+// DefaultConfig loads the default E3DB configuration.
+func DefaultConfig() (*ClientOpts, error) {
+	return loadConfig(fmt.Sprintf("~/.tozny/e3db.json"))
 }
 
 // GetConfig loads an E3DB client configuration from a configuration

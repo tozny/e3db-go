@@ -61,21 +61,27 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/tozny/e3db-go"
 )
 
 func main() {
-	client, err := e3db.GetClient("local")
+	client, err := e3db.GetDefaultClient()
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 		return
 	}
 
 	cursor := client.Query(context.Background(), e3db.Q{})
-	for cursor.Next() {
-		record := cursor.Get()
+	for {
+		record, err := cursor.Next()
+		if err == e3db.Done {
+			break
+		} else if err != nil {
+			log.Fatal(err)
+		}
 		fmt.Println(record.Meta.RecordID)
 	}
 }
