@@ -528,8 +528,7 @@ func cmdSubscribe(cmd *cli.Cmd) {
 		source.Subscribe(channel)
 
 		go func() {
-			for {
-				event := <-source.Events()
+			for event := range source.Events() {
 				b, _ := json.MarshalIndent(event, "  ", "  ")
 				log.Println(string(b))
 			}
