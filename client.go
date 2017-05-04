@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"golang.org/x/oauth2/clientcredentials"
 )
 
@@ -84,6 +85,26 @@ type Meta struct {
 type Record struct {
 	Meta Meta              `json:"meta"`
 	Data map[string]string `json:"data"`
+}
+
+// Channel contains information defining the channel to which a client
+// wishes to connect.
+type Channel struct {
+	Application string `json:"application"`
+	Type        string `json:"type"`
+	Subject     string `json:"subject"`
+}
+
+// Event is an object representing the JSON blob dispatched from e3db in
+// response to serverside events.
+type Event struct {
+	Time        time.Time         `json:"time"`
+	Application string            `json:"application"`
+	Type        string            `json:"type"`
+	Action      string            `json:"action"`
+	Subject     string            `json:"subject"`
+	Producer    string            `json:"producer"`
+	Context     map[string]string `json:"context"`
 }
 
 // GetDefaultClient loads the default E3DB configuration profile and
@@ -377,4 +398,117 @@ func (c *Client) Unshare(ctx context.Context, recordType string, readerID string
 
 	defer closeResp(resp)
 	return nil
+}
+
+// EventSource represents an open socket to the e3db Event source.
+type EventSource struct {
+	commands chan subscription
+	events   chan Event
+	conn     *websocket.Conn
+}
+
+type subscription struct {
+	Action  string  `json:"action"`
+	Channel Channel `json:"subscription"`
+}
+
+// NewEventSource is a factory that creates a new EventSource object for the
+// given client, allowing for incoming events from the e3db server to be ingested
+// by a client application.
+func (c *Client) NewEventSource(ctx context.Context) (*EventSource, error) {
+	// Get an auth token
+	config := clientcredentials.Config{
+		ClientID:     c.Options.APIKeyID,
+		ClientSecret: c.Options.APISecret,
+		TokenURL:     c.apiURL() + "/v1/auth/token",
+	}
+
+	token, err := config.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	authHeader := make(http.Header)
+	authHeader.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+
+	eventsURL := strings.Replace(strings.Replace(c.apiURL(), "https://", "wss://", 1), "http://", "ws://", 1)
+	u := fmt.Sprintf("%s/v1/events/subscribe", eventsURL)
+	conn, _, err := websocket.DefaultDialer.Dial(u, authHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	commands := make(chan subscription)
+	events := make(chan Event)
+
+	source := EventSource{
+		commands: commands,
+		events:   events,
+		conn:     conn,
+	}
+
+	done := make(chan struct{})
+
+	// Pipe events from the websocket to the channel
+	go func() {
+		defer conn.Close()
+		defer close(done)
+
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+
+			event := Event{}
+			json.Unmarshal(message, &event)
+
+			// Do something with the message
+			events <- event
+		}
+	}()
+
+	// Send subscriptions as they're added to the channel
+	go func() {
+		for {
+			command := <-commands
+			buf, _ := json.Marshal(command)
+			writeErr := conn.WriteMessage(websocket.TextMessage, buf)
+			if writeErr != nil {
+				return
+			}
+		}
+	}()
+
+	return &source, nil
+}
+
+// Subscribe to a specific event stream
+func (c *EventSource) Subscribe(channel Channel) {
+	command := subscription{
+		Action:  "attach",
+		Channel: channel,
+	}
+
+	c.commands <- command
+}
+
+// Unsubscribe from a specific event stream
+func (c *EventSource) Unsubscribe(channel Channel) {
+	command := subscription{
+		Action:  "detach",
+		Channel: channel,
+	}
+
+	c.commands <- command
+}
+
+// Close the underlying websocket connection
+func (c *EventSource) Close() error {
+	return c.conn.Close()
+}
+
+// Events produces a one-way version of the event-bearing channel
+func (c *EventSource) Events() <-chan Event {
+	return c.events
 }
