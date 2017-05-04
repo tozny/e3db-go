@@ -494,18 +494,18 @@ func cmdSubscribe(cmd *cli.Cmd) {
 			Subject:     *clientID,
 		}
 
-		connection, err := client.OpenConnection(context.Background())
+		source, err := client.NewEventSource(context.Background())
 		if err != nil {
 			dieErr(err)
 		}
-		defer connection.Close()
+		defer source.Close()
 
-		connection.Subscribe(channel)
+		source.Subscribe(channel)
 
 		go func() {
 			for {
-				event := <-connection.Events
-				b, _ := json.Marshal(event)
+				event := <-source.Events()
+				b, _ := json.MarshalIndent(event, "  ", "  ")
 				log.Println(string(b))
 			}
 		}()

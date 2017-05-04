@@ -400,10 +400,10 @@ func (c *Client) Unshare(ctx context.Context, recordType string, readerID string
 	return nil
 }
 
-// Connection represents an open socket to the e3db Event server.
-type Connection struct {
+// EventSource represents an open socket to the e3db Event source.
+type EventSource struct {
 	commands chan subscription
-	Events   chan Event
+	events   chan Event
 	conn     *websocket.Conn
 }
 
@@ -412,8 +412,10 @@ type subscription struct {
 	Channel Channel `json:"subscription"`
 }
 
-// OpenConnection opens a websocket connection to the event server
-func (c *Client) OpenConnection(ctx context.Context) (*Connection, error) {
+// NewEventSource is a factory that creates a new EventSource object for the
+// given client, allowing for incoming events from the e3db server to be ingested
+// by a client application.
+func (c *Client) NewEventSource(ctx context.Context) (*EventSource, error) {
 	// Get an auth token
 	config := clientcredentials.Config{
 		ClientID:     c.Options.APIKeyID,
@@ -439,9 +441,9 @@ func (c *Client) OpenConnection(ctx context.Context) (*Connection, error) {
 	commands := make(chan subscription)
 	events := make(chan Event)
 
-	connection := Connection{
+	source := EventSource{
 		commands: commands,
-		Events:   events,
+		events:   events,
 		conn:     conn,
 	}
 
@@ -478,11 +480,11 @@ func (c *Client) OpenConnection(ctx context.Context) (*Connection, error) {
 		}
 	}()
 
-	return &connection, nil
+	return &source, nil
 }
 
 // Subscribe to a specific event stream
-func (c *Connection) Subscribe(channel Channel) {
+func (c *EventSource) Subscribe(channel Channel) {
 	command := subscription{
 		Action:  "attach",
 		Channel: channel,
@@ -492,7 +494,7 @@ func (c *Connection) Subscribe(channel Channel) {
 }
 
 // Unsubscribe from a specific event stream
-func (c *Connection) Unsubscribe(channel Channel) {
+func (c *EventSource) Unsubscribe(channel Channel) {
 	command := subscription{
 		Action:  "detach",
 		Channel: channel,
@@ -502,6 +504,11 @@ func (c *Connection) Unsubscribe(channel Channel) {
 }
 
 // Close the underlying websocket connection
-func (c *Connection) Close() error {
+func (c *EventSource) Close() error {
 	return c.conn.Close()
+}
+
+// Events produces a one-way version of the event-bearing channel
+func (c *EventSource) Events() <-chan Event {
+	return c.events
 }
