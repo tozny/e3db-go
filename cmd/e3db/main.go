@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -64,6 +65,21 @@ func (o *cliOptions) getClient() *e3db.Client {
 	}
 
 	return client
+}
+
+func getClientID(client *e3db.Client, maybeEmail string) (string, error) {
+	_, err := mail.ParseAddress(maybeEmail)
+	if err != nil {
+		// If the string isn't an email, it must be an ID. Return it.
+		return maybeEmail, nil
+	}
+
+	ci, err := client.GetClientInfo(context.Background(), maybeEmail)
+	if err != nil {
+		return "", err
+	}
+
+	return ci.ClientID, nil
 }
 
 var options cliOptions
@@ -363,7 +379,12 @@ func cmdShare(cmd *cli.Cmd) {
 	cmd.Action = func() {
 		client := options.getClient()
 
-		err := client.Share(context.Background(), *recordType, *clientID)
+		realClientID, e := getClientID(client, *clientID)
+		if e != nil {
+			dieErr(e)
+		}
+
+		err := client.Share(context.Background(), *recordType, realClientID)
 		if err != nil {
 			dieErr(err)
 		}
@@ -410,7 +431,7 @@ func cmdRegister(cmd *cli.Cmd) {
 	isPublic := cmd.Bool(cli.BoolOpt{
 		Name:      "public",
 		Desc:      "allow other clients to find you by email",
-		Value:     false,
+		Value:     true,
 		HideValue: false,
 	})
 
@@ -421,7 +442,11 @@ func cmdRegister(cmd *cli.Cmd) {
 		HideValue: true,
 	})
 
-	// TODO: minimally validate that email looks like an email address
+	// minimally validate that email looks like an email address
+	_, err := mail.ParseAddress(*email)
+	if err != nil {
+		dieErr(err)
+	}
 
 	cmd.Action = func() {
 		// Preflight check for existing configuration file to prevent a later
