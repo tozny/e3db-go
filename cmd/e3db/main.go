@@ -8,6 +8,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -545,6 +546,39 @@ func cmdSubscribe(cmd *cli.Cmd) {
 	}
 }
 
+func cmdFeedback(cmd *cli.Cmd) {
+	cmd.Action = func() {
+		client := options.getClient()
+
+		// Get input from the user
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("What's your impression so far?\n")
+		text, _ := reader.ReadString('\n')
+
+		toznyClientID, e := getClientID(client, "ijones+feedback@tozny.com")
+		if e != nil {
+			dieErr(errors.New("Feedback address not registered."))
+		}
+
+		// Write feedback to the database
+		record := client.NewRecord("feedback")
+		record.Data["comment"] = text
+		id, err := client.Write(context.Background(), record)
+		if err != nil {
+			dieErr(err)
+		}
+
+		// Share with Tozny
+		shareErr := client.Share(context.Background(), "feedback", toznyClientID)
+		if shareErr != nil {
+			dieErr(err)
+		}
+
+		// Done!
+		fmt.Printf("Your record ID: %s\n", id)
+	}
+}
+
 func main() {
 	app := cli.App("e3db-cli", "E3DB Command Line Interface")
 
@@ -562,6 +596,7 @@ func main() {
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
 	app.Command("subscribe", "subscribe to a stream of events produced by a client", cmdSubscribe)
+	app.Command("feedback", "provde e3db feedback to Tozny", cmdFeedback)
 	app.Command("file", "work with small files", func(cmd *cli.Cmd) {
 		cmd.Command("read", "read a small file", cmdReadFile)
 		cmd.Command("write", "write a small file", cmdWriteFile)
