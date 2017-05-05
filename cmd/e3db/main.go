@@ -411,7 +411,12 @@ func cmdUnshare(cmd *cli.Cmd) {
 	cmd.Action = func() {
 		client := options.getClient()
 
-		err := client.Unshare(context.Background(), *recordType, *clientID)
+		realClientID, e := getClientID(client, *clientID)
+		if e != nil {
+			dieErr(e)
+		}
+
+		err := client.Unshare(context.Background(), *recordType, realClientID)
 		if err != nil {
 			dieErr(err)
 		}
@@ -442,12 +447,6 @@ func cmdRegister(cmd *cli.Cmd) {
 		HideValue: true,
 	})
 
-	// minimally validate that email looks like an email address
-	_, err := mail.ParseAddress(*email)
-	if err != nil {
-		dieErr(err)
-	}
-
 	cmd.Action = func() {
 		// Preflight check for existing configuration file to prevent a later
 		// failure writing the file (since we use O_EXCL) after registration.
@@ -460,6 +459,12 @@ func cmdRegister(cmd *cli.Cmd) {
 			}
 
 			dieFmt("register: profile %s already registered", name)
+		}
+
+		// minimally validate that email looks like an email address
+		_, err := mail.ParseAddress(*email)
+		if err != nil {
+			dieErr(err)
 		}
 
 		info, err := e3db.RegisterClient(*email, e3db.RegistrationOpts{
