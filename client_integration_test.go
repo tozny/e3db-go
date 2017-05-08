@@ -12,37 +12,49 @@ package e3db
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"os"
 	"testing"
+
+	cli "github.com/jawher/mow.cli"
 )
 
-var testClient *Client
+var client *Client
 
 const TEST_SHARE_CLIENT = "dac7899f-c474-4386-9ab8-f638dcc50dec"
 
-func getIntegrationTestClient() (*Client, error) {
-	if testClient != nil {
-		return testClient, nil
-	}
+// TestMain bootstraps the environment and sets up our client instance.
+func TestMain(m *testing.M) {
+	setup()
+	code := m.Run()
+	shutdown()
+	os.Exit(code)
+}
 
+func dieErr(err error) {
+	fmt.Fprintf(os.Stderr, "Unhandled error: %s\n", err)
+	cli.Exit(1)
+}
+
+func setup() {
 	opts, err := GetConfig("integration-test")
 	if err != nil {
-		return nil, err
+		dieErr(err)
 	}
 
-	testClient, err := GetClient(*opts)
+	opts.Logging = false
+
+	client, err = GetClient(*opts)
 	if err != nil {
-		return nil, err
+		dieErr(err)
 	}
+}
 
-	return testClient, nil
+func shutdown() {
+
 }
 
 func TestGetClientInfo(t *testing.T) {
-	client, err := getIntegrationTestClient()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	info, err := client.GetClientInfo(context.Background(), client.Options.ClientID)
 	if err != nil {
 		t.Fatal(err)
@@ -63,11 +75,6 @@ func TestGetClientInfo(t *testing.T) {
 }
 
 func TestWriteRead(t *testing.T) {
-	client, err := getIntegrationTestClient()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	rec1 := client.NewRecord("test-data")
 	rec1.Data["message"] = "Hello, world!"
 	recordID, err := client.Write(context.Background(), rec1)
@@ -97,15 +104,25 @@ func TestWriteRead(t *testing.T) {
 	}
 }
 
-func TestShare(t *testing.T) {
-	client, err := getIntegrationTestClient()
+// TestWriteThenDelete should delete a record
+func TestWriteThenDelete(t *testing.T) {
+	rec1 := client.NewRecord("test-data")
+	rec1.Data["message"] = "Hello, world!"
+	recordID, err := client.Write(context.Background(), rec1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	err = client.Delete(context.Background(), recordID)
+	if err != nil {
+		t.Errorf("Delete failed: %s", err)
+	}
+}
+
+func TestShare(t *testing.T) {
 	rec1 := client.NewRecord("test-data")
 	rec1.Data["message"] = "Hello, world!"
-	_, err = client.Write(context.Background(), rec1)
+	_, err := client.Write(context.Background(), rec1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,5 +130,59 @@ func TestShare(t *testing.T) {
 	err = client.Share(context.Background(), "test-data", TEST_SHARE_CLIENT)
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+// TestShareThenUnshare should share then revoke sharing
+func TestShareThenUnshare(t *testing.T) {
+	rec1 := client.NewRecord("test-share-data")
+	rec1.Data["message"] = "Hello, world!"
+	_, err := client.Write(context.Background(), rec1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.Share(context.Background(), "test-share-data", TEST_SHARE_CLIENT)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = client.Unshare(context.Background(), "test-share-date", TEST_SHARE_CLIENT)
+	if err != nil {
+		t.Errorf("Unshare failed: %s", err)
+	}
+}
+
+// TestEvents should create and utilize an event stream
+func TestEvents(t *testing.T) {
+	channel := Channel{
+		Application: "e3db",
+		Type:        "producer",
+		Subject:     client.Options.ClientID,
+	}
+
+	source, err := client.NewEventSource(context.Background())
+	if err != nil {
+		dieErr(err)
+	}
+	defer source.Close()
+
+	events := 0
+	done := make(chan struct{})
+
+	go func() {
+		for range source.Events() {
+			events = events + 1
+			if events == 3 {
+				close(done)
+			}
+		}
+	}()
+
+	source.Subscribe(channel)
+
+	source.Unsubscribe(channel)
+
+	for range done {
 	}
 }

@@ -1,3 +1,5 @@
+[![Build Status][travis-image]][travis-url] [![Coverage Status][coveralls-image]][coveralls-url]
+
 # Overview
 
 This repository contains a client library and command-line tool
@@ -89,4 +91,9 @@ func main() {
 
 ## Documentaton
 
-Comprehensive documentation for the SDK can be found ounline [via GoDoc](https://godoc.org/github.com/tozny/e3db-go).
+Comprehensive documentation for the SDK can be found online [via GoDoc](https://godoc.org/github.com/tozny/e3db-go).
+
+[travis-image]: https://travis-ci.org/tozny/e3db-go.svg?branch=master
+[travis-url]: https://travis-ci.org/tozny/e3db-go
+[coveralls-image]: https://coveralls.io/repos/github/tozny/e3db-go/badge.svg?branch=master
+[coveralls-url]: https://coveralls.io/github/tozny/e3db-go
