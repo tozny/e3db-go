@@ -86,3 +86,7 @@ func main() {
 	}
 }
 ```
+
+## Documentaton
+
+Comprehensive documentation for the SDK can be found ounline [via GoDoc](https://godoc.org/github.com/tozny/e3db-go).
