@@ -12,6 +12,8 @@ install:
   - go get github.com/mattn/goveralls
   - ./travis-install-configfile.sh
 
+secure: "S8APg/P5NgYQjBhlL3tf2hovPFZxC+5NOhFhrZwZq3sVplOG6toBGWyDGK7YymUZ1ZQhp7BwNmhFUzch5RuATXoNfMDfoCVq5+JDmfNgQkcwfXnI8q2T+JWPSt+PsB89gpKmBsjWu5Pg4vMODuS3asL+NY3uHpwmmJWW4YgxIE3RIpwlPSYhSJqXJNBNGB59Rh6udZEJuBMRcFI2l4Dg4bVak1/p+UYHp9DkkKGyGboopDJ0tXRW2zLWg7cIPlzKBRMS69/b+fx9kcnMN7CEly0e+WTJf4OuEiqTfM8M2e06ec/KKZurJKTZQ8rdu6WtvUx+nENkxqANfdXkf2IIrSFx5lHXaVAKcCYSIyj/rhqktSXOpSuvRqFTeAjkWGnB+kFKwXU6X7osr/bh2HZ2NIEnmP6a2mIStvtvViepjwg++GWgjAU+9tzoqsF1N/m85YFNbPrI5684clT2B6iKnb/tatBZr8NRFNo4TtJv/IEmiL75tsqUYye/lYY1pAg4oVzuU7thkLfBwfHSx8u3o9IWnA89uujJPMng7xUarvp7OzMgKOhbTh6xn9HVY/uWngtHEkKfGIp5KXJLQFtgJipKbUQkBfcTDftDLVAwn0egXvQ3MOgff2Wzo+G0+ORTPUneOFpvnCOYOPfkC/hAv0i0MC6GJVVe+RVm3Qu9ukY="
+
 script:
   - go test -v -covermode=count -coverprofile=coverage.out --tags integration
   - $(go env GOPATH | awk 'BEGIN{FS=":"} {print $1}')/bin/goveralls -coverprofile=coverage.out -service=travis-ci -repotoken $COVERALLS_TOKEN
