@@ -10,6 +10,7 @@ install:
   - cd $GOPATH/src/github.com/Masterminds/glide && git checkout 84607742b10f492430762d038e954236bbaf23f7 && go install && cd -
   - glide install
   - go get github.com/mattn/goveralls
+  - ./travis-install-configfile.sh
 
 script:
   - go test -v -covermode=count -coverprofile=coverage.out --tags integration
