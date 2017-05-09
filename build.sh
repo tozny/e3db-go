@@ -15,7 +15,7 @@ glide install
 
 for os in darwin linux windows; do
   for arch in 386 amd64; do
-    GOOS=$os GOARCH=$arch go build ./cmd/e3db
+    CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build ./cmd/e3db
     case $os in 
         windows)
             mv e3db.exe build/e3db-$os-$arch$suffix.exe
