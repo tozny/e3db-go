@@ -95,7 +95,7 @@ func main() {
 }
 ```
 
-## Writing a record
+## Reading and Writing Records
 
 To write new records to the database, first create a blank record of
 the correct type with NewRecord. Then fill in the fields of the record's
