@@ -581,6 +581,48 @@ func cmdFeedback(cmd *cli.Cmd) {
 	}
 }
 
+func cmdPolicyOutgoing(cmd *cli.Cmd) {
+	cmd.Action = func() {
+		client := options.getClient()
+		osps, err := client.GetOutgoingSharing(context.Background())
+		if err != nil {
+			dieErr(err)
+		}
+
+		for _, osp := range osps {
+			var displayName *string
+			if osp.ReaderName != "" {
+				displayName = &osp.ReaderName
+			} else {
+				displayName = &osp.ReaderID
+			}
+
+			fmt.Printf("%-40s %s\n", *displayName, osp.Type)
+		}
+	}
+}
+
+func cmdPolicyIncoming(cmd *cli.Cmd) {
+	cmd.Action = func() {
+		client := options.getClient()
+		isps, err := client.GetIncomingSharing(context.Background())
+		if err != nil {
+			dieErr(err)
+		}
+
+		for _, isp := range isps {
+			var displayName *string
+			if isp.WriterName != "" {
+				displayName = &isp.WriterName
+			} else {
+				displayName = &isp.WriterID
+			}
+
+			fmt.Printf("%-40s %s\n", *displayName, isp.Type)
+		}
+	}
+}
+
 func main() {
 	app := cli.App("e3db-cli", "E3DB Command Line Interface")
 
@@ -597,6 +639,10 @@ func main() {
 	app.Command("delete", "delete a record", cmdDelete)
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
+	app.Command("policy", "operations on sharing policy", func(cmd *cli.Cmd) {
+		cmd.Command("incoming", "list incoming sharing policy (who shares with me?)", cmdPolicyIncoming)
+		cmd.Command("outgoing", "list outgoing sharing policy (who have I shared with?)", cmdPolicyOutgoing)
+	})
 	app.Command("subscribe", "subscribe to a stream of events produced by a client", cmdSubscribe)
 	app.Command("feedback", "provde e3db feedback to Tozny", cmdFeedback)
 	app.Command("file", "work with small files", func(cmd *cli.Cmd) {
