@@ -2,8 +2,14 @@
 
 # Overview
 
-This repository contains a client library and command-line tool
-for the Tozny End-to-End Encrypted Database (E3DB).
+The Tozny End-to-End Encrypted Database (E3DB) is a storage platform
+with powerful sharing and consent management features.
+[Read more on our blog.](https://tozny.com/blog/announcing-project-e3db-the-end-to-end-encrypted-database/)
+
+E3DB provides a familiar JSON-based NoSQL-style API for reading, writing,
+and querying data stored securely in the cloud.
+
+This repository contains a client library and command-line tool E3DB.
 
 ## Build Prerequisites
 
@@ -87,6 +93,26 @@ func main() {
 		fmt.Println(record.Meta.RecordID)
 	}
 }
+```
+
+## Writing a record
+
+To write new records to the database, first create a blank record of
+the correct type with NewRecord. Then fill in the fields of the record's
+`Data` field. Finally, write the record to the database with
+`Write`, which returns the unique ID of the newly created record.
+
+```go
+record := client.NewRecord("contact")
+record.Data["first_name"] = "Jon"
+record.Data["last_name"]  = "Snow"
+record.Data["phone"]      = "555-555-1212"
+recordID, err := client.Write(context.Background(), record)
+fmt.Println("Wrote record: " + recordID)
+// Read it back out:
+newRecord, err := client.Read(context.Background(), recordID)
+fmt.Println (newRecord.Data["first_name"])
+
 ```
 
 ## Documentaton
