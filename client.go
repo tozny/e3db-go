@@ -77,6 +77,7 @@ type Meta struct {
 	Plain        map[string]string `json:"plain"`
 	Created      time.Time         `json:"created"`
 	LastModified time.Time         `json:"last_modified"`
+	Version string         `json:"version"`
 }
 
 // Record contains a plaintext 'Meta' object containing record metadata,
@@ -290,40 +291,43 @@ func (c *Client) Read(ctx context.Context, recordID string) (*Record, error) {
 	return record, nil
 }
 
-// NewRecord creates a new record of the given content type.
-func (c *Client) NewRecord(recordType string) *Record {
-	return &Record{
+// Write writes a new encrypted record to the database. Returns the new record (with
+// the original, unencrypted data)
+func (c *Client) Write(ctx context.Context, recordType string, data *map[string]string, plain *map[string]string) (*Record, error) {
+	record := &Record{
 		Meta: Meta{
 			Type:     recordType,
 			WriterID: c.Options.ClientID,
 			UserID:   c.Options.ClientID, // for now
+			Plain: *plain,
 		},
-		Data: make(map[string]string),
+		Data: *data,
 	}
-}
 
-// Write writes a new encrypted record to the database, returning the new record's
-// unique ID.
-func (c *Client) Write(ctx context.Context, record *Record) (string, error) {
 	encryptedRecord, err := c.encryptRecord(ctx, record)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	buf := new(bytes.Buffer)
 	json.NewEncoder(buf).Encode(encryptedRecord)
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/storage/records", c.apiURL()), buf)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	resp, err := c.rawCall(ctx, req, encryptedRecord)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	defer closeResp(resp)
-	return encryptedRecord.Meta.RecordID, nil
+
+	record.Meta.Created = encryptedRecord.Meta.Created
+	record.Meta.LastModified = encryptedRecord.Meta.LastModified
+	record.Meta.Version = encryptedRecord.Meta.Version
+	record.Meta.RecordID = encryptedRecord.Meta.RecordID
+	return record, nil
 }
 
 // Delete deletes a record given a record ID.

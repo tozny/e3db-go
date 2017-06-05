@@ -206,18 +206,19 @@ func cmdWrite(cmd *cli.Cmd) {
 			recordData = *data
 		}
 
-		record := client.NewRecord(*recordType)
-		err := json.NewDecoder(strings.NewReader(recordData)).Decode(&record.Data)
+		jsonData := make(map[string]string)
+
+		err := json.NewDecoder(strings.NewReader(recordData)).Decode(&jsonData)
 		if err != nil {
 			dieErr(err)
 		}
 
-		id, err := client.Write(context.Background(), record)
+		record, err := client.Write(context.Background(), *recordType, &jsonData, nil)
 		if err != nil {
 			dieErr(err)
 		}
 
-		fmt.Println(id)
+		fmt.Println(record.Meta.RecordID)
 	}
 }
 
@@ -238,7 +239,7 @@ func cmdWriteFile(cmd *cli.Cmd) {
 
 	cmd.Action = func() {
 		client := options.getClient()
-		record := client.NewRecord(*recordType)
+		data := make(map[string]string)
 
 		f, err := os.Open(*filename)
 		if err != nil {
@@ -260,16 +261,16 @@ func cmdWriteFile(cmd *cli.Cmd) {
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(f)
 
-		record.Data["filename"] = fi.Name()
-		record.Data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
-		record.Data["size"] = strconv.FormatInt(fi.Size(), 10)
+		data["filename"] = fi.Name()
+		data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
+		data["size"] = strconv.FormatInt(fi.Size(), 10)
 
-		id, err := client.Write(context.Background(), record)
+		record, err := client.Write(context.Background(), *recordType, &data, nil)
 		if err != nil {
 			dieErr(err)
 		}
 
-		fmt.Println(id)
+		fmt.Println(record.Meta.RecordID)
 	}
 }
 
@@ -561,9 +562,10 @@ func cmdFeedback(cmd *cli.Cmd) {
 		}
 
 		// Write feedback to the database
-		record := client.NewRecord("feedback")
-		record.Data["comment"] = text
-		id, err := client.Write(context.Background(), record)
+		data := make(map[string]string)
+		data["comment"] = text
+
+		id, err := client.Write(context.Background(), "feedback", &data, nil)
 		if err != nil {
 			dieErr(err)
 		}
