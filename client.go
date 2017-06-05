@@ -77,7 +77,7 @@ type Meta struct {
 	Plain        map[string]string `json:"plain"`
 	Created      time.Time         `json:"created"`
 	LastModified time.Time         `json:"last_modified"`
-	Version string         `json:"version"`
+	Version      string            `json:"version,omitempty"`
 }
 
 // Record contains a plaintext 'Meta' object containing record metadata,
@@ -294,12 +294,19 @@ func (c *Client) Read(ctx context.Context, recordID string) (*Record, error) {
 // Write writes a new encrypted record to the database. Returns the new record (with
 // the original, unencrypted data)
 func (c *Client) Write(ctx context.Context, recordType string, data *map[string]string, plain *map[string]string) (*Record, error) {
+	var plainMap map[string]string
+	if plain == nil {
+		plainMap = nil
+	} else {
+		plainMap = *plain
+	}
+
 	record := &Record{
 		Meta: Meta{
 			Type:     recordType,
 			WriterID: c.Options.ClientID,
 			UserID:   c.Options.ClientID, // for now
-			Plain: *plain,
+			Plain:    plainMap,
 		},
 		Data: *data,
 	}
@@ -328,6 +335,35 @@ func (c *Client) Write(ctx context.Context, recordType string, data *map[string]
 	record.Meta.Version = encryptedRecord.Meta.Version
 	record.Meta.RecordID = encryptedRecord.Meta.RecordID
 	return record, nil
+}
+
+// Updates a record, if the version field matches the
+// version stored by E3DB.
+//
+// Returns HTTP 409 (Conflict) in error if the record cannot be updated.
+func (c *Client) Update(ctx context.Context, record *Record) error {
+	encryptedRecord, err := c.encryptRecord(ctx, record)
+	if err != nil {
+		return err
+	}
+
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(encryptedRecord)
+	u := fmt.Sprintf("%s/v1/storage/records/safe/%s/%s", c.apiURL(), url.QueryEscape(record.Meta.RecordID), url.QueryEscape(record.Meta.Version))
+	req, err := http.NewRequest("PUT", u, buf)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.rawCall(ctx, req, encryptedRecord)
+	if err != nil {
+		return err
+	}
+
+	defer closeResp(resp)
+
+	record.Meta = encryptedRecord.Meta
+	return nil
 }
 
 // Delete deletes a record given a record ID.
