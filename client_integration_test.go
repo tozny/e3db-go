@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
 
@@ -75,12 +76,13 @@ func TestGetClientInfo(t *testing.T) {
 }
 
 func TestWriteRead(t *testing.T) {
-	rec1 := client.NewRecord("test-data")
-	rec1.Data["message"] = "Hello, world!"
-	recordID, err := client.Write(context.Background(), rec1)
+	data := make(map[string]string)
+	data["message"] = "Hello, world!"
+	rec1, err := client.Write(context.Background(), "test-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	recordID := rec1.Meta.RecordID
 
 	rec2, err := client.Read(context.Background(), recordID)
 	if err != nil {
@@ -106,12 +108,13 @@ func TestWriteRead(t *testing.T) {
 
 // TestWriteThenDelete should delete a record
 func TestWriteThenDelete(t *testing.T) {
-	rec1 := client.NewRecord("test-data")
-	rec1.Data["message"] = "Hello, world!"
-	recordID, err := client.Write(context.Background(), rec1)
+	data := make(map[string]string)
+	data["message"] = "Hello, world!"
+	record, err := client.Write(context.Background(), "test-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	recordID := record.Meta.RecordID
 
 	err = client.Delete(context.Background(), recordID)
 	if err != nil {
@@ -120,9 +123,9 @@ func TestWriteThenDelete(t *testing.T) {
 }
 
 func TestShare(t *testing.T) {
-	rec1 := client.NewRecord("test-data")
-	rec1.Data["message"] = "Hello, world!"
-	_, err := client.Write(context.Background(), rec1)
+	data := make(map[string]string)
+	data["message"] = "Hello, world!"
+	_, err := client.Write(context.Background(), "test-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,9 +138,9 @@ func TestShare(t *testing.T) {
 
 // TestShareThenUnshare should share then revoke sharing
 func TestShareThenUnshare(t *testing.T) {
-	rec1 := client.NewRecord("test-share-data")
-	rec1.Data["message"] = "Hello, world!"
-	_, err := client.Write(context.Background(), rec1)
+	data := make(map[string]string)
+	data["message"] = "Hello, world!"
+	_, err := client.Write(context.Background(), "test-share-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,5 +187,59 @@ func TestEvents(t *testing.T) {
 	source.Unsubscribe(channel)
 
 	for range done {
+	}
+}
+
+func TestCounter(t *testing.T) {
+	data := make(map[string]string)
+	data["counter"] = "1"
+	rec1, err := client.Write(context.Background(), "test-data", data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordID := rec1.Meta.RecordID
+
+	// Update w/ correct version
+	err = client.Update(context.Background(), rec1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec1.Data["counter"] = "X"
+	rec1.Meta.Version = "6bc381c7-a41d-45ae-89aa-0890ad654673"
+	// should not update
+	err = client.Update(context.Background(), rec1)
+	if err == nil {
+		t.Fatal("Should not be able to update record with wrong version.")
+	}
+
+	if httpErr, ok := err.(*httpError); ok {
+		if httpErr.StatusCode != http.StatusConflict {
+			t.Fatal("Version conflict not reported.")
+		}
+	}
+
+	rec2, err := client.Read(context.Background(), recordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rec2.Data["counter"] != "1" {
+		t.Fatal("Counter had wrong value.")
+	}
+
+	rec2.Data["counter"] = "2"
+	err = client.Update(context.Background(), rec2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec3, err := client.Read(context.Background(), recordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rec3.Data["counter"] != "2" {
+		t.Fatal("Counter had wrong value")
 	}
 }
