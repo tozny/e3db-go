@@ -293,22 +293,15 @@ func (c *Client) Read(ctx context.Context, recordID string) (*Record, error) {
 
 // Write writes a new encrypted record to the database. Returns the new record (with
 // the original, unencrypted data)
-func (c *Client) Write(ctx context.Context, recordType string, data *map[string]string, plain *map[string]string) (*Record, error) {
-	var plainMap map[string]string
-	if plain == nil {
-		plainMap = nil
-	} else {
-		plainMap = *plain
-	}
-
+func (c *Client) Write(ctx context.Context, recordType string, data map[string]string, plain map[string]string) (*Record, error) {
 	record := &Record{
 		Meta: Meta{
 			Type:     recordType,
 			WriterID: c.Options.ClientID,
 			UserID:   c.Options.ClientID, // for now
-			Plain:    plainMap,
+			Plain:    plain,
 		},
-		Data: *data,
+		Data: data,
 	}
 
 	encryptedRecord, err := c.encryptRecord(ctx, record)

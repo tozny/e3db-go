@@ -213,7 +213,7 @@ func cmdWrite(cmd *cli.Cmd) {
 			dieErr(err)
 		}
 
-		record, err := client.Write(context.Background(), *recordType, &jsonData, nil)
+		record, err := client.Write(context.Background(), *recordType, jsonData, nil)
 		if err != nil {
 			dieErr(err)
 		}
@@ -265,7 +265,7 @@ func cmdWriteFile(cmd *cli.Cmd) {
 		data["contents"] = base64.RawURLEncoding.EncodeToString(buf.Bytes())
 		data["size"] = strconv.FormatInt(fi.Size(), 10)
 
-		record, err := client.Write(context.Background(), *recordType, &data, nil)
+		record, err := client.Write(context.Background(), *recordType, data, nil)
 		if err != nil {
 			dieErr(err)
 		}
@@ -565,7 +565,7 @@ func cmdFeedback(cmd *cli.Cmd) {
 		data := make(map[string]string)
 		data["comment"] = text
 
-		id, err := client.Write(context.Background(), "feedback", &data, nil)
+		id, err := client.Write(context.Background(), "feedback", data, nil)
 		if err != nil {
 			dieErr(err)
 		}

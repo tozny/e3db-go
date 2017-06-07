@@ -78,7 +78,7 @@ func TestGetClientInfo(t *testing.T) {
 func TestWriteRead(t *testing.T) {
 	data := make(map[string]string)
 	data["message"] = "Hello, world!"
-	rec1, err := client.Write(context.Background(), "test-data", &data, nil)
+	rec1, err := client.Write(context.Background(), "test-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestWriteRead(t *testing.T) {
 func TestWriteThenDelete(t *testing.T) {
 	data := make(map[string]string)
 	data["message"] = "Hello, world!"
-	record, err := client.Write(context.Background(), "test-data", &data, nil)
+	record, err := client.Write(context.Background(), "test-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestWriteThenDelete(t *testing.T) {
 func TestShare(t *testing.T) {
 	data := make(map[string]string)
 	data["message"] = "Hello, world!"
-	_, err := client.Write(context.Background(), "test-data", &data, nil)
+	_, err := client.Write(context.Background(), "test-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestShare(t *testing.T) {
 func TestShareThenUnshare(t *testing.T) {
 	data := make(map[string]string)
 	data["message"] = "Hello, world!"
-	_, err := client.Write(context.Background(), "test-share-data", &data, nil)
+	_, err := client.Write(context.Background(), "test-share-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestEvents(t *testing.T) {
 func TestCounter(t *testing.T) {
 	data := make(map[string]string)
 	data["counter"] = "1"
-	rec1, err := client.Write(context.Background(), "test-data", &data, nil)
+	rec1, err := client.Write(context.Background(), "test-data", data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
