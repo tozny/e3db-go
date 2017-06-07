@@ -128,8 +128,9 @@ func cmdRead(cmd *cli.Cmd) {
 	cmd.Action = func() {
 		client := options.getClient()
 		doQuery(client, true, &e3db.Q{
-			RecordIDs:   *recordIDs,
-			IncludeData: true,
+			RecordIDs:         *recordIDs,
+			IncludeData:       true,
+			IncludeAllWriters: true,
 		})
 	}
 }
@@ -140,6 +141,16 @@ func cmdList(cmd *cli.Cmd) {
 	contentTypes := cmd.StringsOpt("t type", nil, "record content types")
 	writerIDs := cmd.StringsOpt("w writer", nil, "record writer IDs or email addresses")
 	userIDs := cmd.StringsOpt("u user", nil, "record user IDs")
+
+	var allWritersSpecified bool = false
+	allWriters := cmd.Bool(cli.BoolOpt{
+		Name:      "a all-writers",
+		Value:     false,
+		Desc:      "include records from all writers (including those shared with you).",
+		EnvVar:    "",
+		SetByUser: &allWritersSpecified,
+	})
+
 	recordIDs := cmd.Strings(cli.StringsArg{
 		Name:      "RECORD_ID",
 		Value:     nil,
@@ -152,6 +163,16 @@ func cmdList(cmd *cli.Cmd) {
 	cmd.Action = func() {
 		client := options.getClient()
 		ctx := context.Background()
+
+		// We assume user wants records from all writers if no writer IDs
+		// were given on command line (and they did not specify --all-writers
+		// explicitly).
+		var allWritersFlag bool = false
+		if allWritersSpecified {
+			allWritersFlag = *allWriters
+		} else if len(*writerIDs) == 0 {
+			allWritersFlag = true
+		}
 
 		// Convert e-mail addresses in write list to writer IDs.
 		for ix, writerID := range *writerIDs {
@@ -166,11 +187,12 @@ func cmdList(cmd *cli.Cmd) {
 		}
 
 		doQuery(client, *outputJSON, &e3db.Q{
-			ContentTypes: *contentTypes,
-			RecordIDs:    *recordIDs,
-			WriterIDs:    *writerIDs,
-			UserIDs:      *userIDs,
-			IncludeData:  *data,
+			ContentTypes:      *contentTypes,
+			RecordIDs:         *recordIDs,
+			WriterIDs:         *writerIDs,
+			UserIDs:           *userIDs,
+			IncludeData:       *data,
+			IncludeAllWriters: allWritersFlag,
 		})
 	}
 }
