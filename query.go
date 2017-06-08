@@ -29,8 +29,9 @@ type Q struct {
 }
 
 type searchRecord struct {
-	Meta Meta              `json:"meta"`
-	Data map[string]string `json:"record_data"`
+	Meta      Meta              `json:"meta"`
+	Data      map[string]string `json:"record_data"`
+	AccessKey *getEAKResponse   `json:"access_key"`
 }
 
 func (r *searchRecord) toRecord() *Record {
@@ -95,7 +96,19 @@ func (c *Cursor) Next() (*Record, error) {
 
 	record := c.response.Results[c.index].toRecord()
 	if c.query.IncludeData {
-		err := c.client.decryptRecord(c.ctx, record)
+		accessKey := c.response.Results[c.index].AccessKey
+		var err error
+
+		if accessKey != nil {
+			ak, err := c.client.decryptEAK(accessKey)
+			if err != nil {
+				return nil, err
+			}
+			err = c.client.decryptRecordWithKey(record, ak)
+		} else {
+			err = c.client.decryptRecord(c.ctx, record)
+		}
+
 		if err != nil {
 			return nil, err
 		}

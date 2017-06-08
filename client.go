@@ -433,6 +433,62 @@ func (c *Client) Unshare(ctx context.Context, recordType string, readerID string
 	return nil
 }
 
+// OutgoingSharingPolicy contains information about who and what types of
+// records I have shared with.
+type OutgoingSharingPolicy struct {
+	ReaderID   string `json:"reader_id"`
+	Type       string `json:"record_type"`
+	ReaderName string `json:"reader_name"`
+}
+
+// GetOutgoingSharing returns a list of readers and types of records that
+// I am currently sharing.
+func (c *Client) GetOutgoingSharing(ctx context.Context) ([]OutgoingSharingPolicy, error) {
+	u := fmt.Sprintf("%s/v1/storage/policy/outgoing", c.apiURL())
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var osp []OutgoingSharingPolicy
+
+	resp, err := c.rawCall(ctx, req, &osp)
+	if err != nil {
+		return nil, err
+	}
+
+	defer closeResp(resp)
+	return osp, nil
+}
+
+// IncomingSharingPolicy contains information about who has shared what type
+// of records with me.
+type IncomingSharingPolicy struct {
+	WriterID   string `json:"writer_id"`
+	Type       string `json:"record_type"`
+	WriterName string `json:"writer_name"`
+}
+
+// GetIncomingSharing returns a list of writers and types of records that are
+// currently shared with me.
+func (c *Client) GetIncomingSharing(ctx context.Context) ([]IncomingSharingPolicy, error) {
+	u := fmt.Sprintf("%s/v1/storage/policy/incoming", c.apiURL())
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var isp []IncomingSharingPolicy
+
+	resp, err := c.rawCall(ctx, req, &isp)
+	if err != nil {
+		return nil, err
+	}
+
+	defer closeResp(resp)
+	return isp, nil
+}
+
 // EventSource represents an open socket to the e3db Event source.
 type EventSource struct {
 	commands chan subscription
