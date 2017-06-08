@@ -232,8 +232,29 @@ type putEAKRequest struct {
 	EAK string `json:"eak"`
 }
 
-// TODO: Distinguish between HTTP errors like "NotFound" vs. actual unexpected
-// errors so we can figure out if we should generate a new AK.
+// decryptEAK decodes and decrypts a 'getEAKResponse' object sent
+// from the e3db service, returning the secret access key or an
+// error if the encrypted key is invalid.
+func (c *Client) decryptEAK(eak *getEAKResponse) (secretKey, error) {
+	fields := strings.SplitN(eak.EAK, ".", 2)
+	if len(fields) != 2 {
+		return nil, errors.New("invalid access key format")
+	}
+
+	authorizerPublicKey, err := decodePublicKey(eak.AuthorizerPublicKey.Curve25519)
+	if err != nil {
+		return nil, err
+	}
+
+	akBytes, err := boxDecryptFromBase64(fields[0], fields[1], authorizerPublicKey, c.Options.PrivateKey)
+	if err != nil {
+		return nil, errors.New("access key decryption failure")
+	}
+
+	ak := makeSecretKey(akBytes)
+	return ak, nil
+}
+
 func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, recordType string) (secretKey, error) {
 	akID := akCacheKey{writerID, userID, recordType}
 	if ak, ok := c.getAKCache(akID); ok {
@@ -260,22 +281,11 @@ func (c *Client) getAccessKey(ctx context.Context, writerID, userID, readerID, r
 
 	defer closeResp(resp)
 
-	fields := strings.SplitN(getEAK.EAK, ".", 2)
-	if len(fields) != 2 {
-		return nil, errors.New("invalid access key format")
-	}
-
-	authorizerPublicKey, err := decodePublicKey(getEAK.AuthorizerPublicKey.Curve25519)
+	ak, err := c.decryptEAK(&getEAK)
 	if err != nil {
 		return nil, err
 	}
 
-	akBytes, err := boxDecryptFromBase64(fields[0], fields[1], authorizerPublicKey, c.Options.PrivateKey)
-	if err != nil {
-		return nil, errors.New("access key decryption failure")
-	}
-
-	ak := makeSecretKey(akBytes)
 	c.putAKCache(akID, ak)
 	return ak, nil
 }
@@ -326,6 +336,17 @@ func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
 		return errors.New("cannot obtain access key")
 	}
 
+	err = c.decryptRecordWithKey(record, ak)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// decryptRecordWithKey modifies a record in-place, decrypting all
+// data fields using the specified access key.
+func (c *Client) decryptRecordWithKey(record *Record, ak secretKey) error {
 	for k, v := range record.Data {
 		fields := strings.SplitN(v, ".", 4)
 		if len(fields) != 4 {
