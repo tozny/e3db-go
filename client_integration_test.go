@@ -136,6 +136,21 @@ func TestShare(t *testing.T) {
 	}
 }
 
+func haveSharedWith(id, recordType string) (bool, error) {
+	osps, err := client.GetOutgoingSharing(context.Background())
+	if err != nil {
+		return false, err
+	}
+
+	for _, osp := range osps {
+		if osp.ReaderID == id && osp.Type == recordType {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // TestShareThenUnshare should share then revoke sharing
 func TestShareThenUnshare(t *testing.T) {
 	data := make(map[string]string)
@@ -150,9 +165,32 @@ func TestShareThenUnshare(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = client.Unshare(context.Background(), "test-share-date", TEST_SHARE_CLIENT)
+	isShared, err := haveSharedWith(TEST_SHARE_CLIENT, "test-share-data")
+	if err != nil {
+		t.Errorf("share failed: %s", err)
+	} else if !isShared {
+		t.Error("share: have not shared with client")
+	}
+
+	err = client.Unshare(context.Background(), "test-share-data", TEST_SHARE_CLIENT)
 	if err != nil {
 		t.Errorf("Unshare failed: %s", err)
+	}
+
+	isShared, err = haveSharedWith(TEST_SHARE_CLIENT, "test-share-data")
+	if err != nil {
+		t.Errorf("unshare failed: %s", err)
+	} else if isShared {
+		t.Error("unshare: have unexpectedly shared with client")
+	}
+}
+
+// TestIncomingSharing currently tests that the incoming sharing endpoint
+// works and returns a non-error result.
+func TestIncomingSharing(t *testing.T) {
+	_, err := client.GetIncomingSharing(context.Background())
+	if err != nil {
+		t.Errorf("TestIncomingSharing: %s", err)
 	}
 }
 
