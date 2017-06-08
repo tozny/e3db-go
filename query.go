@@ -18,14 +18,15 @@ import (
 
 // Q contains options for querying a set of records in the database.
 type Q struct {
-	Count        int               `json:"count"`
-	IncludeData  bool              `json:"include_data,omitempty"`
-	WriterIDs    []string          `json:"writer_ids,omitempty"`
-	UserIDs      []string          `json:"user_ids,omitempty"`
-	RecordIDs    []string          `json:"record_ids,omitempty"`
-	ContentTypes []string          `json:"content_types,omitempty"`
-	AfterIndex   int               `json:"after_index,omitempty"`
-	Plain        map[string]string `json:"plain,omitempty"`
+	Count             int               `json:"count"`
+	IncludeData       bool              `json:"include_data,omitempty"`
+	WriterIDs         []string          `json:"writer_ids,omitempty"`
+	UserIDs           []string          `json:"user_ids,omitempty"`
+	RecordIDs         []string          `json:"record_ids,omitempty"`
+	ContentTypes      []string          `json:"content_types,omitempty"`
+	AfterIndex        int               `json:"after_index,omitempty"`
+	Plain             map[string]string `json:"plain,omitempty"`
+	IncludeAllWriters bool              `json:"include_all_writers,omitempty"`
 }
 
 type searchRecord struct {
