@@ -70,14 +70,14 @@ type ClientInfo struct {
 // Meta contains meta-information about an E3DB record, such as
 // who wrote it, when it was written, and the type of the data stored.
 type Meta struct {
-	RecordID     string            `json:"record_id,omitempty"`
-	WriterID     string            `json:"writer_id"`
-	UserID       string            `json:"user_id"`
-	Type         string            `json:"type"`
-	Plain        map[string]string `json:"plain"`
-	Created      time.Time         `json:"created"`
-	LastModified time.Time         `json:"last_modified"`
-	Version      string            `json:"version,omitempty"`
+	RecordID     string                 `json:"record_id,omitempty"`
+	WriterID     string                 `json:"writer_id"`
+	UserID       string                 `json:"user_id"`
+	Type         string                 `json:"type"`
+	Plain        map[string]interface{} `json:"plain"`
+	Created      time.Time              `json:"created"`
+	LastModified time.Time              `json:"last_modified"`
+	Version      string                 `json:"version,omitempty"`
 }
 
 // Record contains a plaintext 'Meta' object containing record metadata,
@@ -293,7 +293,7 @@ func (c *Client) Read(ctx context.Context, recordID string) (*Record, error) {
 
 // Write writes a new encrypted record to the database. Returns the new record (with
 // the original, unencrypted data)
-func (c *Client) Write(ctx context.Context, recordType string, data map[string]string, plain map[string]string) (*Record, error) {
+func (c *Client) Write(ctx context.Context, recordType string, data map[string]string, plain map[string]interface{}) (*Record, error) {
 	record := &Record{
 		Meta: Meta{
 			Type:     recordType,
