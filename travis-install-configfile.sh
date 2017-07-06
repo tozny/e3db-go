@@ -22,3 +22,20 @@ cat > "$HOME/.tozny/integration-test/e3db.json" <<EOT
     "private_key":"${PRIVATE_KEY}"
 }
 EOT
+
+if [ ! -d "$HOME/.tozny/integration-test-shared" ]; then
+    mkdir -p "$HOME/.tozny/integration-test-shared"
+fi
+
+cat > "$HOME/.tozny/integration-test-shared/e3db.json" <<EOT
+{
+    "version":1,
+    "api_url":"${API_URL_2}",
+    "api_key_id":"${API_KEY_ID_2}",
+    "api_secret":"${API_SECRET_2}",
+    "client_id":"${CLIENT_ID_2}",
+    "client_email":"${CLIENT_EMAIL_2}",
+    "public_key":"${PUBLIC_KEY_2}",
+    "private_key":"${PRIVATE_KEY_2}"
+}
+EOT
