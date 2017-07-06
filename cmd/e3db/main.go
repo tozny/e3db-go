@@ -104,8 +104,12 @@ func doQuery(client *e3db.Client, useJSON bool, q *e3db.Q) {
 				fmt.Printf(",\n")
 			}
 
-			bytes, _ := json.MarshalIndent(record, "  ", "  ")
-			fmt.Printf("  %s", bytes)
+			buffer := bytes.Buffer{}
+			encoder := json.NewEncoder(&buffer)
+			encoder.SetEscapeHTML(false)
+			encoder.SetIndent("  ", "  ")
+			encoder.Encode(record)
+			fmt.Printf("  %s", buffer.Bytes())
 		} else {
 			fmt.Printf("%-40s %s\n", record.Meta.RecordID, record.Meta.Type)
 		}
