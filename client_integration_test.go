@@ -21,8 +21,7 @@ import (
 )
 
 var client *Client
-
-const TEST_SHARE_CLIENT = "dac7899f-c474-4386-9ab8-f638dcc50dec"
+var clientSharedWithID string
 
 // TestMain bootstraps the environment and sets up our client instance.
 func TestMain(m *testing.M) {
@@ -49,6 +48,22 @@ func setup() {
 	if err != nil {
 		dieErr(err)
 	}
+
+	// Load another client for later sharing tests
+	opts, err = GetConfig("integration-test-shared")
+	if err != nil {
+		dieErr(err)
+	}
+
+	opts.Logging = false
+
+	var client2 *Client
+	client2, err = GetClient(*opts)
+	if err != nil {
+		dieErr(err)
+	}
+
+	clientSharedWithID = client2.Options.ClientID
 }
 
 func shutdown() {
@@ -130,7 +145,7 @@ func TestShare(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = client.Share(context.Background(), "test-data", TEST_SHARE_CLIENT)
+	err = client.Share(context.Background(), "test-data", clientSharedWithID)
 	if err != nil {
 		t.Error(err)
 	}
@@ -160,24 +175,24 @@ func TestShareThenUnshare(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = client.Share(context.Background(), "test-share-data", TEST_SHARE_CLIENT)
+	err = client.Share(context.Background(), "test-share-data", clientSharedWithID)
 	if err != nil {
 		t.Error(err)
 	}
 
-	isShared, err := haveSharedWith(TEST_SHARE_CLIENT, "test-share-data")
+	isShared, err := haveSharedWith(clientSharedWithID, "test-share-data")
 	if err != nil {
 		t.Errorf("share failed: %s", err)
 	} else if !isShared {
 		t.Error("share: have not shared with client")
 	}
 
-	err = client.Unshare(context.Background(), "test-share-data", TEST_SHARE_CLIENT)
+	err = client.Unshare(context.Background(), "test-share-data", clientSharedWithID)
 	if err != nil {
 		t.Errorf("Unshare failed: %s", err)
 	}
 
-	isShared, err = haveSharedWith(TEST_SHARE_CLIENT, "test-share-data")
+	isShared, err = haveSharedWith(clientSharedWithID, "test-share-data")
 	if err != nil {
 		t.Errorf("unshare failed: %s", err)
 	} else if isShared {
