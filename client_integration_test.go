@@ -171,30 +171,31 @@ func haveSharedWith(id, recordType string) (bool, error) {
 // TestShareThenUnshare should share then revoke sharing
 func TestShareThenUnshare(t *testing.T) {
 	data := make(map[string]string)
+	ctype := "test-share-data-" + base64Encode(randomSecretKey()[:8])
 	data["message"] = "Hello, world!"
-	_, err := client.Write(context.Background(), "test-share-data", data, nil)
+	_, err := client.Write(context.Background(), ctype, data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = client.Share(context.Background(), "test-share-data", clientSharedWithID)
+	err = client.Share(context.Background(), ctype, clientSharedWithID)
 	if err != nil {
 		t.Error(err)
 	}
 
-	isShared, err := haveSharedWith(clientSharedWithID, "test-share-data")
+	isShared, err := haveSharedWith(clientSharedWithID, ctype)
 	if err != nil {
 		t.Errorf("share failed: %s", err)
 	} else if !isShared {
 		t.Error("share: have not shared with client")
 	}
 
-	err = client.Unshare(context.Background(), "test-share-data", clientSharedWithID)
+	err = client.Unshare(context.Background(), ctype, clientSharedWithID)
 	if err != nil {
 		t.Errorf("Unshare failed: %s", err)
 	}
 
-	isShared, err = haveSharedWith(clientSharedWithID, "test-share-data")
+	isShared, err = haveSharedWith(clientSharedWithID, ctype)
 	if err != nil {
 		t.Errorf("unshare failed: %s", err)
 	} else if isShared {
