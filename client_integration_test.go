@@ -139,13 +139,15 @@ func TestWriteThenDelete(t *testing.T) {
 
 func TestShare(t *testing.T) {
 	data := make(map[string]string)
+	ctype := "test-data-" + base64Encode(randomSecretKey()[:8])
+
 	data["message"] = "Hello, world!"
-	_, err := client.Write(context.Background(), "test-data", data, nil)
+	_, err := client.Write(context.Background(), ctype, data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = client.Share(context.Background(), "test-data", clientSharedWithID)
+	err = client.Share(context.Background(), ctype, clientSharedWithID)
 	if err != nil {
 		t.Error(err)
 	}

@@ -415,8 +415,6 @@ func (c *Client) Share(ctx context.Context, recordType string, readerID string) 
 // Unshare revokes another e3db client's permission to read records of the
 // given record type.
 func (c *Client) Unshare(ctx context.Context, recordType string, readerID string) error {
-	// TODO: Need to delete their access key!
-
 	id := c.Options.ClientID
 	u := fmt.Sprintf("%s/v1/storage/policy/%s/%s/%s/%s", c.apiURL(), id, id, readerID, recordType)
 	req, err := http.NewRequest("PUT", u, strings.NewReader(denyReadPolicy))
@@ -425,6 +423,11 @@ func (c *Client) Unshare(ctx context.Context, recordType string, readerID string
 	}
 
 	resp, err := c.rawCall(ctx, req, nil)
+	if err != nil {
+		return err
+	}
+
+	err = c.deleteAccessKey(ctx, id, id, readerID, recordType)
 	if err != nil {
 		return err
 	}

@@ -324,6 +324,28 @@ func (c *Client) putAccessKey(ctx context.Context, writerID, userID, readerID, r
 	return nil
 }
 
+func (c *Client) deleteAccessKey(ctx context.Context, writerID, userID, readerID, recordType string) error {
+	u := fmt.Sprintf("%s/v1/storage/access_keys/%s/%s/%s/%s", c.apiURL(), writerID, userID, readerID, recordType)
+	req, err := http.NewRequest("DELETE", u, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.rawCall(ctx, req, nil)
+	if err != nil {
+		return err
+	}
+
+	defer closeResp(resp)
+
+	if c.akCache != nil {
+		cacheKey := akCacheKey{writerID, userID, recordType}
+		c.akCache[cacheKey] = nil
+	}
+
+	return nil
+}
+
 // decryptRecord modifies a record in-place, decrypting all data fields
 // using an access key granted by an authorizer.
 func (c *Client) decryptRecord(ctx context.Context, record *Record) error {
