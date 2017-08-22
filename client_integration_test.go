@@ -47,13 +47,13 @@ func setup() {
 	if err != nil {
 		dieErr(err)
 	}
-	pubKey := clientKey{Curve25519: base64Encode(pub[:])}
+	pubKey := ClientKey{Curve25519: base64Encode(pub[:])}
 
 	pub2, priv2, err := generateKeyPair()
 	if err != nil {
 		dieErr(err)
 	}
-	pubKey2 := clientKey{Curve25519: base64Encode(pub2[:])}
+	pubKey2 := ClientKey{Curve25519: base64Encode(pub2[:])}
 
 	clientDetails, err := RegisterClient(token, clientName, pubKey, apiURL)
 	if err != nil {
@@ -115,7 +115,7 @@ func TestRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pubKey := clientKey{Curve25519: base64Encode(pub[:])}
+	pubKey := ClientKey{Curve25519: base64Encode(pub[:])}
 	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
 
 	client, err := RegisterClient(token, clientName, pubKey, apiURL)

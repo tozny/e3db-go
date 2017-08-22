@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"golang.org/x/crypto/nacl/box"
 
 	"github.com/jawher/mow.cli"
 	"github.com/tozny/e3db-go"
@@ -590,6 +593,79 @@ func cmdPolicyIncoming(cmd *cli.Cmd) {
 	}
 }
 
+func cmdRegister(cmd *cli.Cmd) {
+	apiBaseURL := cmd.String(cli.StringOpt{
+		Name:      "api",
+		Desc:      "e3db api base url",
+		Value:     "",
+		HideValue: true,
+	})
+
+	email := cmd.String(cli.StringArg{
+		Name:      "EMAIL",
+		Desc:      "client e-mail address",
+		Value:     "",
+		HideValue: true,
+	})
+
+	token := cmd.String(cli.StringArg{
+		Name:      "TOKEN",
+		Desc:      "registration token from the InnoVault admin console",
+		Value:     "",
+		HideValue: false,
+	})
+
+	cmd.Action = func() {
+		// Preflight check for existing configuration file to prevent a later
+		// failure writing the file (since we use O_EXCL) after registration.
+		if e3db.ProfileExists(*options.Profile) {
+			var name string
+			if *options.Profile != "" {
+				name = *options.Profile
+			} else {
+				name = "(default)"
+			}
+
+			dieFmt("register: profile %s already registered", name)
+		}
+
+		// minimally validate that email looks like an email address
+		_, err := mail.ParseAddress(*email)
+		if err != nil {
+			dieErr(err)
+		}
+
+		pub, priv, err := box.GenerateKey(rand.Reader)
+		if err != nil {
+			dieErr(err)
+		}
+
+		publicKey := e3db.ClientKey{Curve25519: base64.RawURLEncoding.EncodeToString(pub[:])}
+
+		details, err := e3db.RegisterClient(*token, *email, publicKey, *apiBaseURL)
+
+		if err != nil {
+			dieErr(err)
+		}
+
+		info := &e3db.ClientOpts{
+			ClientID:    details.ClientID,
+			ClientEmail: details.Name,
+			APIKeyID:    details.ApiKeyID,
+			APISecret:   details.ApiSecret,
+			PublicKey:   pub,
+			PrivateKey:  priv,
+			APIBaseURL:  *apiBaseURL,
+			Logging:     false,
+		}
+
+		err = e3db.SaveConfig(*options.Profile, info)
+		if err != nil {
+			dieErr(err)
+		}
+	}
+}
+
 func main() {
 	app := cli.App("e3db-cli", "E3DB Command Line Interface")
 
@@ -598,6 +674,7 @@ func main() {
 	options.Logging = app.BoolOpt("d debug", false, "enable debug logging")
 	options.Profile = app.StringOpt("p profile", "", "e3db configuration profile")
 
+	app.Command("register", "register a client", cmdRegister)
 	app.Command("info", "get client information", cmdInfo)
 	app.Command("ls", "list records", cmdList)
 	app.Command("write", "write a record", cmdWrite)

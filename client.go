@@ -40,8 +40,8 @@ type ClientOpts struct {
 	ClientEmail string
 	APIKeyID    string
 	APISecret   string
-	PublicKey   publicKey
-	PrivateKey  privateKey
+	PublicKey   PublicKey
+	PrivateKey  PrivateKey
 	APIBaseURL  string
 	Logging     bool
 }
@@ -55,7 +55,7 @@ type Client struct {
 	akCache    map[akCacheKey]secretKey
 }
 
-type clientKey struct {
+type ClientKey struct {
 	Curve25519 string `json:"curve25519"`
 }
 
@@ -63,7 +63,7 @@ type clientKey struct {
 // about a client.
 type ClientInfo struct {
 	ClientID  string    `json:"client_id"`
-	PublicKey clientKey `json:"public_key"`
+	PublicKey ClientKey `json:"public_key"`
 	Validated bool      `json:"validated"`
 }
 
@@ -72,13 +72,13 @@ type ClientDetails struct {
 	ClientID  string    `json:"client_id"`
 	ApiKeyID  string    `json:"api_key_id"`
 	ApiSecret string    `json:"api_secret"`
-	PublicKey clientKey `json:"public_key"`
+	PublicKey ClientKey `json:"public_key"`
 	Name      string    `json:"name"`
 }
 
 type clientRegistrationInfo struct {
 	Name      string    `json:"name"`
-	PublicKey clientKey `json:"public_key"`
+	PublicKey ClientKey `json:"public_key"`
 }
 
 type clientRegistrationRequest struct {
@@ -152,7 +152,7 @@ func GetClient(opts ClientOpts) (*Client, error) {
 }
 
 // RegisterClient creates a new client for a given InnoVault account
-func RegisterClient(registrationToken string, clientName string, publicKey clientKey, apiURL string) (*ClientDetails, error) {
+func RegisterClient(registrationToken string, clientName string, publicKey ClientKey, apiURL string) (*ClientDetails, error) {
 	if apiURL == "" {
 		apiURL = defaultStorageURL
 	}
@@ -304,7 +304,7 @@ func (c *Client) GetClientInfo(ctx context.Context, clientID string) (*ClientInf
 // getClientKey queries the E3DB server for a client's public key
 // given its client UUID. (This was exported in the Java SDK but
 // I'm not sure why since it's rather low level.)
-func (c *Client) getClientKey(ctx context.Context, clientID string) (publicKey, error) {
+func (c *Client) getClientKey(ctx context.Context, clientID string) (PublicKey, error) {
 	info, err := c.GetClientInfo(ctx, clientID)
 	if err != nil {
 		return nil, err
