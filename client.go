@@ -67,6 +67,25 @@ type ClientInfo struct {
 	Validated bool      `json:"validated"`
 }
 
+// ClientDetails contains information about a newly-registered E3DB client
+type ClientDetails struct {
+	ClientID  string    `json:"client_id"`
+	ApiKeyID  string    `json:"api_key_id"`
+	ApiSecret string    `json:"api_secret"`
+	PublicKey clientKey `json:"public_key"`
+	Name      string    `json:"name"`
+}
+
+type clientRegistrationInfo struct {
+	Name      string    `json:"name"`
+	PublicKey clientKey `json:"public_key"`
+}
+
+type clientRegistrationRequest struct {
+	Token  string                 `json:"token"`
+	Client clientRegistrationInfo `json:"client"`
+}
+
 // Meta contains meta-information about an E3DB record, such as
 // who wrote it, when it was written, and the type of the data stored.
 type Meta struct {
@@ -130,6 +149,46 @@ func GetClient(opts ClientOpts) (*Client, error) {
 	return &Client{
 		Options: opts,
 	}, nil
+}
+
+// RegisterClient creates a new client for a given InnoVault account
+func RegisterClient(registrationToken string, clientName string, publicKey clientKey, apiURL string) (*ClientDetails, error) {
+	if apiURL == "" {
+		apiURL = defaultStorageURL
+	}
+
+	request := &clientRegistrationRequest{
+		Token: registrationToken,
+		Client: clientRegistrationInfo{
+			Name:      clientName,
+			PublicKey: publicKey,
+		},
+	}
+
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(request)
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/account/e3db/clients/register", apiURL), buf)
+
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer closeResp(resp)
+
+	var details *ClientDetails
+	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
+		closeResp(resp)
+		return nil, err
+	}
+
+	return details, nil
 }
 
 func (c *Client) apiURL() string {

@@ -37,12 +37,44 @@ func dieErr(err error) {
 }
 
 func setup() {
-	opts, err := GetConfig("integration-test")
+	apiURL := os.Getenv("API_URL")
+	token := os.Getenv("REGISTRATION_TOKEN")
+
+	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
+	shareClientName := "share-client-" + base64Encode(randomSecretKey()[:8])
+
+	pub, priv, err := generateKeyPair()
+	if err != nil {
+		dieErr(err)
+	}
+	pubKey := clientKey{Curve25519: base64Encode(pub[:])}
+
+	pub2, priv2, err := generateKeyPair()
+	if err != nil {
+		dieErr(err)
+	}
+	pubKey2 := clientKey{Curve25519: base64Encode(pub2[:])}
+
+	clientDetails, err := RegisterClient(token, clientName, pubKey, apiURL)
 	if err != nil {
 		dieErr(err)
 	}
 
-	opts.Logging = false
+	shareClientDetails, err := RegisterClient(token, shareClientName, pubKey2, apiURL)
+	if err != nil {
+		dieErr(err)
+	}
+
+	opts := &ClientOpts{
+		ClientID:    clientDetails.ClientID,
+		ClientEmail: "",
+		APIKeyID:    clientDetails.ApiKeyID,
+		APISecret:   clientDetails.ApiSecret,
+		PublicKey:   pub,
+		PrivateKey:  priv,
+		APIBaseURL:  apiURL,
+		Logging:     false,
+	}
 
 	client, err = GetClient(*opts)
 	if err != nil {
@@ -50,12 +82,16 @@ func setup() {
 	}
 
 	// Load another client for later sharing tests
-	opts, err = GetConfig("integration-test-shared")
-	if err != nil {
-		dieErr(err)
+	opts = &ClientOpts{
+		ClientID:    shareClientDetails.ClientID,
+		ClientEmail: "",
+		APIKeyID:    shareClientDetails.ApiKeyID,
+		APISecret:   shareClientDetails.ApiSecret,
+		PublicKey:   pub2,
+		PrivateKey:  priv2,
+		APIBaseURL:  apiURL,
+		Logging:     false,
 	}
-
-	opts.Logging = false
 
 	var client2 *Client
 	client2, err = GetClient(*opts)
@@ -68,6 +104,45 @@ func setup() {
 
 func shutdown() {
 
+}
+
+func TestRegistration(t *testing.T) {
+	apiURL := os.Getenv("API_URL")
+	token := os.Getenv("REGISTRATION_TOKEN")
+
+	pub, _, err := generateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pubKey := clientKey{Curve25519: base64Encode(pub[:])}
+	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
+
+	client, err := RegisterClient(token, clientName, pubKey, apiURL)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if clientName != client.Name {
+		t.Errorf("Client name does not match: %s != %s", clientName, client.Name)
+	}
+
+	if pubKey.Curve25519 != client.PublicKey.Curve25519 {
+		t.Errorf("Client keys do not match: %s != %s", pubKey.Curve25519, client.PublicKey.Curve25519)
+	}
+
+	if client.ClientID == "" {
+		t.Error("Client ID is not set")
+	}
+
+	if client.ApiKeyID == "" {
+		t.Error("API Key ID is not set")
+	}
+
+	if client.ApiSecret == "" {
+		t.Error("API Secret is not set")
+	}
 }
 
 func TestGetClientInfo(t *testing.T) {
