@@ -21,6 +21,7 @@ import (
 )
 
 var client *Client
+var clientOpts *ClientOpts
 var altClient *Client
 var clientSharedWithID string
 
@@ -66,7 +67,7 @@ func setup() {
 		dieErr(err)
 	}
 
-	opts := &ClientOpts{
+	clientOpts = &ClientOpts{
 		ClientID:    clientDetails.ClientID,
 		ClientEmail: "",
 		APIKeyID:    clientDetails.ApiKeyID,
@@ -77,17 +78,17 @@ func setup() {
 		Logging:     false,
 	}
 
-	client, err = GetClient(*opts)
+	client, err = GetClient(*clientOpts)
 	if err != nil {
 		dieErr(err)
 	}
-	altClient, err = GetClient(*opts)
+	altClient, err = GetClient(*clientOpts)
 	if err != nil {
 		dieErr(err)
 	}
 
 	// Load another client for later sharing tests
-	opts = &ClientOpts{
+	opts := &ClientOpts{
 		ClientID:    shareClientDetails.ClientID,
 		ClientEmail: "",
 		APIKeyID:    shareClientDetails.ApiKeyID,
@@ -147,6 +148,28 @@ func TestRegistration(t *testing.T) {
 
 	if client.ApiSecret == "" {
 		t.Error("API Secret is not set")
+	}
+}
+
+func TestConfig(t *testing.T) {
+	profile := "p_" + base64Encode(randomSecretKey()[:8])
+
+	if ProfileExists(profile) {
+		t.Error("Profile already exists")
+	}
+
+	err := SaveConfig(profile, clientOpts)
+	if err != nil {
+		t.Error("Unable to save profile")
+	}
+
+	newOpts, err := GetConfig(profile)
+	if err != nil {
+		t.Error("Unable to re-read profile")
+	}
+
+	if newOpts.ClientID != clientOpts.ClientID {
+		t.Error("Invalid profile retrieved")
 	}
 }
 
