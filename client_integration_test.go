@@ -21,6 +21,7 @@ import (
 )
 
 var client *Client
+var altClient *Client
 var clientSharedWithID string
 
 // TestMain bootstraps the environment and sets up our client instance.
@@ -77,6 +78,10 @@ func setup() {
 	}
 
 	client, err = GetClient(*opts)
+	if err != nil {
+		dieErr(err)
+	}
+	altClient, err = GetClient(*opts)
 	if err != nil {
 		dieErr(err)
 	}
@@ -175,6 +180,37 @@ func TestWriteRead(t *testing.T) {
 	recordID := rec1.Meta.RecordID
 
 	rec2, err := client.Read(context.Background(), recordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rec1.Meta.WriterID != rec2.Meta.WriterID {
+		t.Errorf("Writer IDs don't match: %s != %s", rec1.Meta.WriterID, rec2.Meta.WriterID)
+	}
+
+	if rec1.Meta.UserID != rec2.Meta.UserID {
+		t.Errorf("User IDs don't match: %s != %s", rec1.Meta.UserID, rec2.Meta.UserID)
+	}
+
+	if rec1.Meta.Type != rec2.Meta.Type {
+		t.Errorf("Record types don't match: %s != %s", rec1.Meta.Type, rec2.Meta.Type)
+	}
+
+	if rec1.Data["message"] != rec2.Data["message"] {
+		t.Errorf("Record field doesn't match: %s != %s", rec1.Data["message"], rec2.Data["message"])
+	}
+}
+
+func TestWriteReadNoCache(t *testing.T) {
+	data := make(map[string]string)
+	data["message"] = "Hello, world!"
+	rec1, err := client.Write(context.Background(), "test-data", data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordID := rec1.Meta.RecordID
+
+	rec2, err := altClient.Read(context.Background(), recordID)
 	if err != nil {
 		t.Fatal(err)
 	}
