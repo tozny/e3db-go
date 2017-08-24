@@ -126,7 +126,8 @@ const privateKeySize = 32
 type PublicKey *[publicKeySize]byte
 type PrivateKey *[privateKeySize]byte
 
-func generateKeyPair() (PublicKey, PrivateKey, error) {
+// GenerateKeyPair creates a new Curve25519 keypair for cryptographic operations
+func GenerateKeyPair() (PublicKey, PrivateKey, error) {
 	pub, priv, err := box.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, err

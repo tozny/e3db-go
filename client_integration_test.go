@@ -43,13 +43,13 @@ func setup() {
 	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
 	shareClientName := "share-client-" + base64Encode(randomSecretKey()[:8])
 
-	pub, priv, err := generateKeyPair()
+	pub, priv, err := GenerateKeyPair()
 	if err != nil {
 		dieErr(err)
 	}
 	pubKey := ClientKey{Curve25519: base64Encode(pub[:])}
 
-	pub2, priv2, err := generateKeyPair()
+	pub2, priv2, err := GenerateKeyPair()
 	if err != nil {
 		dieErr(err)
 	}
@@ -110,7 +110,7 @@ func TestRegistration(t *testing.T) {
 	apiURL := os.Getenv("API_URL")
 	token := os.Getenv("REGISTRATION_TOKEN")
 
-	pub, _, err := generateKeyPair()
+	pub, _, err := GenerateKeyPair()
 	if err != nil {
 		t.Fatal(err)
 	}
