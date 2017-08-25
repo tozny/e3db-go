@@ -21,6 +21,8 @@ import (
 )
 
 var client *Client
+var clientOpts *ClientOpts
+var altClient *Client
 var clientSharedWithID string
 
 // TestMain bootstraps the environment and sets up our client instance.
@@ -37,25 +39,65 @@ func dieErr(err error) {
 }
 
 func setup() {
-	opts, err := GetConfig("integration-test")
+	apiURL := os.Getenv("API_URL")
+	token := os.Getenv("REGISTRATION_TOKEN")
+
+	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
+	shareClientName := "share-client-" + base64Encode(randomSecretKey()[:8])
+
+	pub, priv, err := GenerateKeyPair()
+	if err != nil {
+		dieErr(err)
+	}
+	pubKey := ClientKey{Curve25519: base64Encode(pub[:])}
+
+	pub2, priv2, err := GenerateKeyPair()
+	if err != nil {
+		dieErr(err)
+	}
+	pubKey2 := ClientKey{Curve25519: base64Encode(pub2[:])}
+
+	clientDetails, err := RegisterClient(token, clientName, pubKey, apiURL)
 	if err != nil {
 		dieErr(err)
 	}
 
-	opts.Logging = false
+	shareClientDetails, err := RegisterClient(token, shareClientName, pubKey2, apiURL)
+	if err != nil {
+		dieErr(err)
+	}
 
-	client, err = GetClient(*opts)
+	clientOpts = &ClientOpts{
+		ClientID:    clientDetails.ClientID,
+		ClientEmail: "",
+		APIKeyID:    clientDetails.ApiKeyID,
+		APISecret:   clientDetails.ApiSecret,
+		PublicKey:   pub,
+		PrivateKey:  priv,
+		APIBaseURL:  apiURL,
+		Logging:     false,
+	}
+
+	client, err = GetClient(*clientOpts)
+	if err != nil {
+		dieErr(err)
+	}
+	altClient, err = GetClient(*clientOpts)
 	if err != nil {
 		dieErr(err)
 	}
 
 	// Load another client for later sharing tests
-	opts, err = GetConfig("integration-test-shared")
-	if err != nil {
-		dieErr(err)
+	opts := &ClientOpts{
+		ClientID:    shareClientDetails.ClientID,
+		ClientEmail: "",
+		APIKeyID:    shareClientDetails.ApiKeyID,
+		APISecret:   shareClientDetails.ApiSecret,
+		PublicKey:   pub2,
+		PrivateKey:  priv2,
+		APIBaseURL:  apiURL,
+		Logging:     false,
 	}
-
-	opts.Logging = false
 
 	var client2 *Client
 	client2, err = GetClient(*opts)
@@ -68,6 +110,67 @@ func setup() {
 
 func shutdown() {
 
+}
+
+func TestRegistration(t *testing.T) {
+	apiURL := os.Getenv("API_URL")
+	token := os.Getenv("REGISTRATION_TOKEN")
+
+	pub, _, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pubKey := ClientKey{Curve25519: base64Encode(pub[:])}
+	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
+
+	client, err := RegisterClient(token, clientName, pubKey, apiURL)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if clientName != client.Name {
+		t.Errorf("Client name does not match: %s != %s", clientName, client.Name)
+	}
+
+	if pubKey.Curve25519 != client.PublicKey.Curve25519 {
+		t.Errorf("Client keys do not match: %s != %s", pubKey.Curve25519, client.PublicKey.Curve25519)
+	}
+
+	if client.ClientID == "" {
+		t.Error("Client ID is not set")
+	}
+
+	if client.ApiKeyID == "" {
+		t.Error("API Key ID is not set")
+	}
+
+	if client.ApiSecret == "" {
+		t.Error("API Secret is not set")
+	}
+}
+
+func TestConfig(t *testing.T) {
+	profile := "p_" + base64Encode(randomSecretKey()[:8])
+
+	if ProfileExists(profile) {
+		t.Error("Profile already exists")
+	}
+
+	err := SaveConfig(profile, clientOpts)
+	if err != nil {
+		t.Error("Unable to save profile")
+	}
+
+	newOpts, err := GetConfig(profile)
+	if err != nil {
+		t.Error("Unable to re-read profile")
+	}
+
+	if newOpts.ClientID != clientOpts.ClientID {
+		t.Error("Invalid profile retrieved")
+	}
 }
 
 func TestGetClientInfo(t *testing.T) {
@@ -100,6 +203,37 @@ func TestWriteRead(t *testing.T) {
 	recordID := rec1.Meta.RecordID
 
 	rec2, err := client.Read(context.Background(), recordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rec1.Meta.WriterID != rec2.Meta.WriterID {
+		t.Errorf("Writer IDs don't match: %s != %s", rec1.Meta.WriterID, rec2.Meta.WriterID)
+	}
+
+	if rec1.Meta.UserID != rec2.Meta.UserID {
+		t.Errorf("User IDs don't match: %s != %s", rec1.Meta.UserID, rec2.Meta.UserID)
+	}
+
+	if rec1.Meta.Type != rec2.Meta.Type {
+		t.Errorf("Record types don't match: %s != %s", rec1.Meta.Type, rec2.Meta.Type)
+	}
+
+	if rec1.Data["message"] != rec2.Data["message"] {
+		t.Errorf("Record field doesn't match: %s != %s", rec1.Data["message"], rec2.Data["message"])
+	}
+}
+
+func TestWriteReadNoCache(t *testing.T) {
+	data := make(map[string]string)
+	data["message"] = "Hello, world!"
+	rec1, err := client.Write(context.Background(), "test-data", data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordID := rec1.Meta.RecordID
+
+	rec2, err := altClient.Read(context.Background(), recordID)
 	if err != nil {
 		t.Fatal(err)
 	}

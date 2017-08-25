@@ -123,10 +123,11 @@ func secretBoxDecryptFromBase64(ciphertext, nonce string, key secretKey) ([]byte
 const publicKeySize = 32
 const privateKeySize = 32
 
-type publicKey *[publicKeySize]byte
-type privateKey *[privateKeySize]byte
+type PublicKey *[publicKeySize]byte
+type PrivateKey *[privateKeySize]byte
 
-func generateKeyPair() (publicKey, privateKey, error) {
+// GenerateKeyPair creates a new Curve25519 keypair for cryptographic operations
+func GenerateKeyPair() (PublicKey, PrivateKey, error) {
 	pub, priv, err := box.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -135,7 +136,7 @@ func generateKeyPair() (publicKey, privateKey, error) {
 	return pub, priv, nil
 }
 
-func makePublicKey(b []byte) publicKey {
+func makePublicKey(b []byte) PublicKey {
 	key := [publicKeySize]byte{}
 	copy(key[:], b)
 	return &key
@@ -144,7 +145,7 @@ func makePublicKey(b []byte) publicKey {
 // decodePublicKey decodes a public key from a Base64URL encoded
 // string containing a 256-bit Curve25519 public key, returning an
 // error if the decode operation fails.
-func decodePublicKey(s string) (publicKey, error) {
+func decodePublicKey(s string) (PublicKey, error) {
 	bytes, err := base64Decode(s)
 	if err != nil {
 		return nil, err
@@ -153,11 +154,11 @@ func decodePublicKey(s string) (publicKey, error) {
 	return makePublicKey(bytes), nil
 }
 
-func encodePublicKey(k publicKey) string {
+func encodePublicKey(k PublicKey) string {
 	return base64Encode(k[:])
 }
 
-func makePrivateKey(b []byte) privateKey {
+func makePrivateKey(b []byte) PrivateKey {
 	key := [privateKeySize]byte{}
 	copy(key[:], b)
 	return &key
@@ -166,7 +167,7 @@ func makePrivateKey(b []byte) privateKey {
 // decodePrivateKey decodes a private key from a Base64URL encoded
 // string containing a 256-bit Curve25519 private key, returning an
 // error if the decode operation fails.
-func decodePrivateKey(s string) (privateKey, error) {
+func decodePrivateKey(s string) (PrivateKey, error) {
 	bytes, err := base64Decode(s)
 	if err != nil {
 		return nil, err
@@ -175,17 +176,17 @@ func decodePrivateKey(s string) (privateKey, error) {
 	return makePrivateKey(bytes), nil
 }
 
-func encodePrivateKey(k privateKey) string {
+func encodePrivateKey(k PrivateKey) string {
 	return base64Encode(k[:])
 }
 
-func boxEncryptToBase64(data []byte, pubKey publicKey, privKey privateKey) (string, string) {
+func boxEncryptToBase64(data []byte, pubKey PublicKey, privKey PrivateKey) (string, string) {
 	n := randomNonce()
 	ciphertext := box.Seal(nil, data, n, pubKey, privKey)
 	return base64Encode(ciphertext), base64Encode(n[:])
 }
 
-func boxDecryptFromBase64(ciphertext, nonce string, pubKey publicKey, privKey privateKey) ([]byte, error) {
+func boxDecryptFromBase64(ciphertext, nonce string, pubKey PublicKey, privKey PrivateKey) ([]byte, error) {
 	ciphertextBytes, err := base64Decode(ciphertext)
 	if err != nil {
 		return nil, err
@@ -225,7 +226,7 @@ func (c *Client) putAKCache(akID akCacheKey, k secretKey) {
 type getEAKResponse struct {
 	EAK                 string    `json:"eak"`
 	AuthorizerID        string    `json:"authorizer_id"`
-	AuthorizerPublicKey clientKey `json:"authorizer_public_key"`
+	AuthorizerPublicKey ClientKey `json:"authorizer_public_key"`
 }
 
 type putEAKRequest struct {
