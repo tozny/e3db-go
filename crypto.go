@@ -123,17 +123,20 @@ func secretBoxDecryptFromBase64(ciphertext, nonce string, key secretKey) ([]byte
 const publicKeySize = 32
 const privateKeySize = 32
 
+// PublicKey is an alias of a 32-byte array representing the public key component
 type PublicKey *[publicKeySize]byte
+
+// PrivateKey is an alias of a 32-byte array representing the private key component
 type PrivateKey *[privateKeySize]byte
 
 // GenerateKeyPair creates a new Curve25519 keypair for cryptographic operations
-func GenerateKeyPair() (PublicKey, PrivateKey, error) {
+func GenerateKeyPair() (string, string, error) {
 	pub, priv, err := box.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, nil, err
+		return "", "", err
 	}
 
-	return pub, priv, nil
+	return encodePublicKey(pub), encodePrivateKey(priv), nil
 }
 
 func makePublicKey(b []byte) PublicKey {
