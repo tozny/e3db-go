@@ -76,8 +76,8 @@ func setup() {
 		ClientEmail: "",
 		APIKeyID:    clientDetails.ApiKeyID,
 		APISecret:   clientDetails.ApiSecret,
-		PublicKey:   makePublicKey(pubBytes),
-		PrivateKey:  makePrivateKey(privBytes),
+		PublicKey:   MakePublicKey(pubBytes),
+		PrivateKey:  MakePrivateKey(privBytes),
 		APIBaseURL:  apiURL,
 		Logging:     false,
 	}
@@ -97,8 +97,8 @@ func setup() {
 		ClientEmail: "",
 		APIKeyID:    shareClientDetails.ApiKeyID,
 		APISecret:   shareClientDetails.ApiSecret,
-		PublicKey:   makePublicKey(pubBytes2),
-		PrivateKey:  makePrivateKey(privBytes2),
+		PublicKey:   MakePublicKey(pubBytes2),
+		PrivateKey:  MakePrivateKey(privBytes2),
 		APIBaseURL:  apiURL,
 		Logging:     false,
 	}
