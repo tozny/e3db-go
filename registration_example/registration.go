@@ -60,11 +60,23 @@ func main() {
 
 	// Passing all of the data above into the registration routine will create
 	// a new client with the system. Remember to keep your private key private!
-	client_info, err := e3db.RegisterClient(token, client_name, wrapped_key, "https://api.e3db.com")
+	client_info, err := e3db.RegisterClient(token, client_name, wrapped_key, "", false, "https://api.e3db.com")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Unhandled error: %s\n", err)
 		log.Fatal(err)
 	}
+
+	// Optionally, you can automatically back up the credentials of the newly-created
+	// client to your InnoVault account (accessible via https://console.tozny.com) by
+	// passing your private key and a backup flag when registering. The private key is
+	// not sent anywhere, but is used by the newly-created client to sign an encrypted
+	// copy of its credentials that is itself stored in e3db for later use.
+
+	// client_info := e3db.RegisterClient(token, client_name, wrapped_key, private_key, true, "https://api.e3db.com")
+	// if err != nil {
+	//   fmt.Fprintf(os.Stderr, "Unhandled error: %s\n", err)
+	//   log.Fatal(err)
+	// }
 
 	fmt.Fprintf(os.Stdout, "Client ID:   %s\n", client_info.ClientID)
 	fmt.Fprintf(os.Stdout, "API Key ID:  %s\n", client_info.ApiKeyID)
