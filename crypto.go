@@ -139,7 +139,8 @@ func GenerateKeyPair() (string, string, error) {
 	return encodePublicKey(pub), encodePrivateKey(priv), nil
 }
 
-func makePublicKey(b []byte) PublicKey {
+// MakePublicKey converts a byte array to a PublicKey type
+func MakePublicKey(b []byte) PublicKey {
 	key := [publicKeySize]byte{}
 	copy(key[:], b)
 	return &key
@@ -154,14 +155,15 @@ func decodePublicKey(s string) (PublicKey, error) {
 		return nil, err
 	}
 
-	return makePublicKey(bytes), nil
+	return MakePublicKey(bytes), nil
 }
 
 func encodePublicKey(k PublicKey) string {
 	return base64Encode(k[:])
 }
 
-func makePrivateKey(b []byte) PrivateKey {
+// MakePrivateKey converts a byte array to a PrivateKey type
+func MakePrivateKey(b []byte) PrivateKey {
 	key := [privateKeySize]byte{}
 	copy(key[:], b)
 	return &key
@@ -176,7 +178,7 @@ func decodePrivateKey(s string) (PrivateKey, error) {
 		return nil, err
 	}
 
-	return makePrivateKey(bytes), nil
+	return MakePrivateKey(bytes), nil
 }
 
 func encodePrivateKey(k PrivateKey) string {

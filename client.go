@@ -315,7 +315,7 @@ func (c *Client) getClientKey(ctx context.Context, clientID string) (PublicKey, 
 		return nil, err
 	}
 
-	return makePublicKey(key), nil
+	return MakePublicKey(key), nil
 }
 
 // ReadRaw reads a record given a record ID and returns the record without
