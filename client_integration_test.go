@@ -23,6 +23,7 @@ import (
 var client *Client
 var clientOpts *ClientOpts
 var altClient *Client
+var client2 *Client
 var clientSharedWithID string
 
 // TestMain bootstraps the environment and sets up our client instance.
@@ -103,7 +104,6 @@ func setup() {
 		Logging:     false,
 	}
 
-	var client2 *Client
 	client2, err = GetClient(*opts)
 	if err != nil {
 		dieErr(err)
@@ -280,14 +280,23 @@ func TestShare(t *testing.T) {
 	ctype := "test-data-" + base64Encode(randomSecretKey()[:8])
 
 	data["message"] = "Hello, world!"
-	_, err := client.Write(context.Background(), ctype, data, nil)
+	record, err := client.Write(context.Background(), ctype, data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = client.Share(context.Background(), ctype, clientSharedWithID)
+	err = client.Share(context.Background(), ctype, client2.Options.ClientID)
 	if err != nil {
 		t.Error(err)
+	}
+
+	record2, err := client2.Read(context.Background(), record.Meta.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if record.Data["message"] != record2.Data["message"] {
+		t.Error("Shared record unreadable!")
 	}
 }
 
