@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -152,7 +153,7 @@ func GetClient(opts ClientOpts) (*Client, error) {
 }
 
 // RegisterClient creates a new client for a given InnoVault account
-func RegisterClient(registrationToken string, clientName string, publicKey ClientKey, apiURL string) (*ClientDetails, error) {
+func RegisterClient(registrationToken string, clientName string, publicKey ClientKey, privateKey string, backup bool, apiURL string) (*ClientDetails, error) {
 	if apiURL == "" {
 		apiURL = defaultStorageURL
 	}
@@ -186,6 +187,36 @@ func RegisterClient(registrationToken string, clientName string, publicKey Clien
 	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
 		closeResp(resp)
 		return nil, err
+	}
+
+	backupClient := resp.Header.Get("X-Backup-Client")
+
+	if backup {
+		if privateKey == "" {
+			return nil, errors.New("Cannot back up client credentials without a private key!")
+		}
+
+		pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey.Curve25519)
+		privBytes, _ := base64.RawURLEncoding.DecodeString(privateKey)
+
+		config := &ClientOpts{
+			ClientID:    details.ClientID,
+			ClientEmail: "",
+			APIKeyID:    details.ApiKeyID,
+			APISecret:   details.ApiSecret,
+			PublicKey:   MakePublicKey(pubBytes),
+			PrivateKey:  MakePrivateKey(privBytes),
+			APIBaseURL:  "https://api.e3db.com",
+			Logging:     false,
+		}
+
+		client, err := GetClient(*config)
+		if err != nil {
+			closeResp(resp)
+			return nil, err
+		}
+
+		client.Backup(context.Background(), backupClient, registrationToken)
 	}
 
 	return details, nil
@@ -422,6 +453,39 @@ func (c *Client) Update(ctx context.Context, record *Record) error {
 func (c *Client) Delete(ctx context.Context, recordID string) error {
 	u := fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), url.QueryEscape(recordID))
 	req, err := http.NewRequest("DELETE", u, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.rawCall(ctx, req, nil)
+	if err != nil {
+		return err
+	}
+
+	defer closeResp(resp)
+	return nil
+}
+
+// Backup backs up the client's credentials to an account with which it's registered
+func (c *Client) Backup(ctx context.Context, clientID string, registrationToken string) error {
+	credentials := make(map[string]string)
+	credentials["version"] = "1"
+	credentials["client_id"] = "\"" + c.Options.ClientID + "\""
+	credentials["api_key_id"] = "\"" + c.Options.APIKeyID + "\""
+	credentials["api_secret"] = "\"" + c.Options.APISecret + "\""
+	credentials["client_email"] = "\"" + c.Options.ClientEmail + "\""
+	credentials["public_key"] = "\"" + encodePublicKey(c.Options.PublicKey) + "\""
+	credentials["private_key"] = "\"" + encodePrivateKey(c.Options.PrivateKey) + "\""
+	credentials["api_url"] = "\"" + c.Options.APIBaseURL + "\""
+
+	plain := make(map[string]string)
+	plain["client"] = c.Options.ClientID
+
+	c.Write(ctx, "tozny.key_backup", credentials, plain)
+	c.Share(ctx, "tozny.key_backup", clientID)
+
+	u := fmt.Sprintf("%s/v1/account/backup/%s/%s", c.apiURL(), registrationToken, c.Options.ClientID)
+	req, err := http.NewRequest("POST", u, nil)
 	if err != nil {
 		return err
 	}
