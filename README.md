@@ -59,6 +59,38 @@ cd $GOPATH/src/github.com/tozny/e3db-go
 glide install
 ```
 
+## Registering a client
+
+Register an account with [InnoVault](https://inoovault.io) to get started. From the Admin Console you can create clients directly (and grab their credentials from the console) or create registration tokens to dynamically create clients with `e3db.RegisterClient()`. Clients registered from within the console will automatically back their credentials up to your account. Clients created dynamically via the SDK can _optionally_ back their credentials up to your account.
+
+For a more complete walkthrough, see [`/registration_example/registration.php`](https://github.com/tozny/e3db-go/blob/master/registration_example/registration.php).
+
+### Without Credential Backup
+
+```go
+token := ""
+client_name := ""
+
+public_key, private_key, _ := e3db.GenerateKeyPair()
+wrapped_key := e3db.ClientKey{Curve25519: public_key}
+client_info, _ := e3db.RegisterClient(token, client_name, wrapped_key, "", false, "https://api.e3db.com")
+```
+
+The object returned from the server contains the client's UUID, API key, and API secret (as well as echos back the public key passed during registration). It's your responsibility to store this information locally as it _will not be recoverable_ without credential backup.
+
+### With Credential Backup
+
+```go
+token := ""
+client_name := ""
+
+public_key, private_key, _ := e3db.GenerateKeyPair()
+wrapped_key := e3db.ClientKey{Curve25519: public_key}
+client_info, _ := e3db.RegisterClient(token, client_name, wrapped_key, private_key, true, "https://api.e3db.com")
+```
+
+The private key must be passed to the registration handler when backing up credentials as it is used to cryptographically sign the encrypted backup file stored on the server. The private key never leaves the system, and the stored credentials will only be accessible to the newly-registered client itself or the account with which it is registered.
+
 ## Usage
 
 Here is some simple example code to connect and list records:
