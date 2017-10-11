@@ -354,7 +354,7 @@ func cmdDelete(cmd *cli.Cmd) {
 		client := options.getClient()
 
 		for _, recordID := range *recordIDs {
-			err := client.Delete(context.Background(), recordID)
+			err := client.Delete(context.Background(), recordID, "")
 			if err != nil {
 				dieErr(err)
 			}

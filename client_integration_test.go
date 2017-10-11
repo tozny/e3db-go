@@ -52,7 +52,6 @@ func setup() {
 	}
 	pubBytes, _ := base64Decode(pub)
 	privBytes, _ := base64Decode(priv)
-	pubKey := ClientKey{Curve25519: pub}
 
 	pub2, priv2, err := GenerateKeyPair()
 	if err != nil {
@@ -60,14 +59,13 @@ func setup() {
 	}
 	pubBytes2, _ := base64Decode(pub2)
 	privBytes2, _ := base64Decode(priv2)
-	pubKey2 := ClientKey{Curve25519: pub2}
 
-	clientDetails, err := RegisterClient(token, clientName, pubKey, "", false, apiURL)
+	clientDetails, err := RegisterClient(token, clientName, pub, "", false, apiURL)
 	if err != nil {
 		dieErr(err)
 	}
 
-	shareClientDetails, err := RegisterClient(token, shareClientName, pubKey2, "", false, apiURL)
+	shareClientDetails, err := RegisterClient(token, shareClientName, pub2, "", false, apiURL)
 	if err != nil {
 		dieErr(err)
 	}
@@ -125,10 +123,9 @@ func TestRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pubKey := ClientKey{Curve25519: pub}
 	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
 
-	client, err := RegisterClient(token, clientName, pubKey, "", false, apiURL)
+	client, err := RegisterClient(token, clientName, pub, "", false, apiURL)
 
 	if err != nil {
 		t.Fatal(err)
@@ -138,8 +135,8 @@ func TestRegistration(t *testing.T) {
 		t.Errorf("Client name does not match: %s != %s", clientName, client.Name)
 	}
 
-	if pubKey.Curve25519 != client.PublicKey.Curve25519 {
-		t.Errorf("Client keys do not match: %s != %s", pubKey.Curve25519, client.PublicKey.Curve25519)
+	if pub != client.PublicKey.Curve25519 {
+		t.Errorf("Client keys do not match: %s != %s", pub, client.PublicKey.Curve25519)
 	}
 
 	if client.ClientID == "" {
@@ -268,8 +265,9 @@ func TestWriteThenDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	recordID := record.Meta.RecordID
+	version := record.Meta.Version
 
-	err = client.Delete(context.Background(), recordID)
+	err = client.Delete(context.Background(), recordID, version)
 	if err != nil {
 		t.Errorf("Delete failed: %s", err)
 	}

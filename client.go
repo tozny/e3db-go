@@ -153,7 +153,7 @@ func GetClient(opts ClientOpts) (*Client, error) {
 }
 
 // RegisterClient creates a new client for a given InnoVault account
-func RegisterClient(registrationToken string, clientName string, publicKey ClientKey, privateKey string, backup bool, apiURL string) (*ClientDetails, error) {
+func RegisterClient(registrationToken string, clientName string, publicKey string, privateKey string, backup bool, apiURL string) (*ClientDetails, error) {
 	if apiURL == "" {
 		apiURL = defaultStorageURL
 	}
@@ -162,7 +162,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey Clien
 		Token: registrationToken,
 		Client: clientRegistrationInfo{
 			Name:      clientName,
-			PublicKey: publicKey,
+			PublicKey: ClientKey{Curve25519: publicKey},
 		},
 	}
 
@@ -196,7 +196,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey Clien
 			return nil, errors.New("Cannot back up client credentials without a private key!")
 		}
 
-		pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey.Curve25519)
+		pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey)
 		privBytes, _ := base64.RawURLEncoding.DecodeString(privateKey)
 
 		config := &ClientOpts{
@@ -449,9 +449,14 @@ func (c *Client) Update(ctx context.Context, record *Record) error {
 	return nil
 }
 
-// Delete deletes a record given a record ID.
-func (c *Client) Delete(ctx context.Context, recordID string) error {
+// Delete removes a record, with optional optimistic locking
+func (c *Client) Delete(ctx context.Context, recordID string, version string) error {
 	u := fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), url.QueryEscape(recordID))
+
+	if version != "" {
+		u = fmt.Sprintf("%s/v1/storage/records/safe/%s/%s", c.apiURL(), url.QueryEscape(recordID), url.QueryEscape(version))
+	}
+
 	req, err := http.NewRequest("DELETE", u, nil)
 	if err != nil {
 		return err
