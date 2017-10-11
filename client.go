@@ -349,9 +349,9 @@ func (c *Client) getClientKey(ctx context.Context, clientID string) (PublicKey, 
 	return MakePublicKey(key), nil
 }
 
-// ReadRaw reads a record given a record ID and returns the record without
+// readRaw reads a record given a record ID and returns the record without
 // decrypting data fields.
-func (c *Client) ReadRaw(ctx context.Context, recordID string) (*Record, error) {
+func (c *Client) readRaw(ctx context.Context, recordID string) (*Record, error) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), recordID), nil)
 	if err != nil {
 		return nil, err
@@ -369,7 +369,7 @@ func (c *Client) ReadRaw(ctx context.Context, recordID string) (*Record, error) 
 
 // Read reads a record given a record ID, decrypts it, and returns the result.
 func (c *Client) Read(ctx context.Context, recordID string) (*Record, error) {
-	record, err := c.ReadRaw(ctx, recordID)
+	record, err := c.readRaw(ctx, recordID)
 	if err != nil {
 		return nil, err
 	}
