@@ -61,7 +61,7 @@ func main() {
 	fmt.Println("Read record id " + recordID + ": " + newFeedbackRecord.Data["comment"])
 
 	// Fetch the Tozny feedback email address public key and client ID
-	feedbackClient, err := client.GetClientInfo(context.Background(), "ijones+feedback@tozny.com")
+	feedbackClient, err := client.GetClientInfo(context.Background(), "db1744b9-3fb6-4458-a291-0bc677dba08b")
 	chk(err)
 
 	// Share all "feedback" records with that user ID.

@@ -526,10 +526,7 @@ func cmdFeedback(cmd *cli.Cmd) {
 		fmt.Print("What's your impression so far?\n")
 		text, _ := reader.ReadString('\n')
 
-		toznyClientID, e := getClientID(client, "ijones+feedback@tozny.com")
-		if e != nil {
-			dieErr(errors.New("Feedback address not registered."))
-		}
+		toznyClientID := "db1744b9-3fb6-4458-a291-0bc677dba08b"
 
 		// Write feedback to the database
 		data := make(map[string]string)
@@ -640,9 +637,9 @@ func cmdRegister(cmd *cli.Cmd) {
 			dieErr(err)
 		}
 
-		publicKey := e3db.ClientKey{Curve25519: base64.RawURLEncoding.EncodeToString(pub[:])}
+		publicKey := base64.RawURLEncoding.EncodeToString(pub[:])
 
-		details, err := e3db.RegisterClient(*token, *email, publicKey, *apiBaseURL)
+		details, err := e3db.RegisterClient(*token, *email, publicKey, "", false, *apiBaseURL)
 
 		if err != nil {
 			dieErr(err)

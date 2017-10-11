@@ -310,8 +310,7 @@ func (c *Client) GetClientInfo(ctx context.Context, clientID string) (*ClientInf
 	var u, method string
 
 	if strings.Contains(clientID, "@") {
-		u = fmt.Sprintf("%s/v1/storage/clients/find?email=%s", c.apiURL(), url.QueryEscape(clientID))
-		method = "POST"
+		return nil, errors.New("Email lookup is not supported.")
 	} else {
 		u = fmt.Sprintf("%s/v1/storage/clients/%s", c.apiURL(), url.QueryEscape(clientID))
 		method = "GET"
