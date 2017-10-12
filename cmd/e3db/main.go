@@ -342,22 +342,26 @@ func cmdReadFile(cmd *cli.Cmd) {
 }
 
 func cmdDelete(cmd *cli.Cmd) {
-	recordIDs := cmd.Strings(cli.StringsArg{
+	recordID := cmd.String(cli.StringArg{
 		Name:      "RECORD_ID",
-		Desc:      "record IDs to delete",
-		Value:     nil,
+		Desc:      "record ID to delete",
+		Value:     "",
 		HideValue: true,
 	})
 
-	cmd.Spec = "RECORD_ID..."
+	version := cmd.String(cli.StringArg{
+		Name:      "VERSION",
+		Desc:      "version ID of the record to delete",
+		Value:     "",
+		HideValue: true,
+	})
+
 	cmd.Action = func() {
 		client := options.getClient()
 
-		for _, recordID := range *recordIDs {
-			err := client.Delete(context.Background(), recordID, "")
-			if err != nil {
-				dieErr(err)
-			}
+		err := client.Delete(context.Background(), *recordID, *version)
+		if err != nil {
+			dieErr(err)
 		}
 	}
 }
