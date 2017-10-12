@@ -47,10 +47,6 @@ func main() {
 	fmt.Fprintf(os.Stdout, "Public Key:  %s\n", public_key)
 	fmt.Fprintf(os.Stdout, "Private Key: %s\n", private_key)
 
-	// The e3db server keeps track of the name of the curve used with public keys,
-	// so we need to wrap the generated version with an object helper
-	wrapped_key := e3db.ClientKey{Curve25519: public_key}
-
 	// Clients must be registered with a name unique to your account to help
 	// differentiate between different sets of credentials in the Admin Console.
 	// In this example, the name is set at random
@@ -60,7 +56,7 @@ func main() {
 
 	// Passing all of the data above into the registration routine will create
 	// a new client with the system. Remember to keep your private key private!
-	client_info, err := e3db.RegisterClient(token, client_name, wrapped_key, "", false, "https://api.e3db.com")
+	client_info, err := e3db.RegisterClient(token, client_name, public_key, "", false, "https://api.e3db.com")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Unhandled error: %s\n", err)
 		log.Fatal(err)
@@ -74,7 +70,7 @@ func main() {
 	//
 	// Client credentials are not backed up by default.
 
-	// client_info := e3db.RegisterClient(token, client_name, wrapped_key, private_key, true, "https://api.e3db.com")
+	// client_info := e3db.RegisterClient(token, client_name, public_key, private_key, true, "https://api.e3db.com")
 	// if err != nil {
 	//   fmt.Fprintf(os.Stderr, "Unhandled error: %s\n", err)
 	//   log.Fatal(err)

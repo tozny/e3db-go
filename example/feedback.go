@@ -49,19 +49,19 @@ func main() {
 	printRecords("")
 
 	// Create a new "feedback" record; this is the type the CLI uses
-	feedbackRecord := client.NewRecord("feedback")
-	feedbackRecord.Data["comment"] = "This is some example feedback!"
-	feedbackRecord.Data["interface"] = "Go Example Code"
-	recordID, err := client.Write(context.Background(), feedbackRecord)
+	feedbackData := make(map[string]string)
+	feedbackData["comment"] = "This is some example feedback!"
+	feedbackData["interface"] = "Go Example Code"
+	record, err := client.Write(context.Background(), "feedback", feedbackData, nil)
 	chk(err)
 
 	// Read back the feedback we just put into the database
-	newFeedbackRecord, err := client.Read(context.Background(), recordID)
+	newFeedbackRecord, err := client.Read(context.Background(), record.Meta.RecordID)
 	chk(err)
-	fmt.Println("Read record id " + recordID + ": " + newFeedbackRecord.Data["comment"])
+	fmt.Println("Read record id " + record.Meta.RecordID + ": " + newFeedbackRecord.Data["comment"])
 
 	// Fetch the Tozny feedback email address public key and client ID
-	feedbackClient, err := client.GetClientInfo(context.Background(), "ijones+feedback@tozny.com")
+	feedbackClient, err := client.GetClientInfo(context.Background(), "db1744b9-3fb6-4458-a291-0bc677dba08b")
 	chk(err)
 
 	// Share all "feedback" records with that user ID.
@@ -73,7 +73,7 @@ func main() {
 
 	// Delete the record we just created to keep things tidy.
 	// Comment out this line if you want to keep it
-	err = client.Delete(context.Background(), recordID)
+	err = client.Delete(context.Background(), record.Meta.RecordID, record.Meta.Version)
 	chk(err)
 
 	fmt.Println("Current list of records after deleting:")

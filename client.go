@@ -153,7 +153,7 @@ func GetClient(opts ClientOpts) (*Client, error) {
 }
 
 // RegisterClient creates a new client for a given InnoVault account
-func RegisterClient(registrationToken string, clientName string, publicKey ClientKey, privateKey string, backup bool, apiURL string) (*ClientDetails, error) {
+func RegisterClient(registrationToken string, clientName string, publicKey string, privateKey string, backup bool, apiURL string) (*ClientDetails, error) {
 	if apiURL == "" {
 		apiURL = defaultStorageURL
 	}
@@ -162,7 +162,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey Clien
 		Token: registrationToken,
 		Client: clientRegistrationInfo{
 			Name:      clientName,
-			PublicKey: publicKey,
+			PublicKey: ClientKey{Curve25519: publicKey},
 		},
 	}
 
@@ -196,7 +196,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey Clien
 			return nil, errors.New("Cannot back up client credentials without a private key!")
 		}
 
-		pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey.Curve25519)
+		pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey)
 		privBytes, _ := base64.RawURLEncoding.DecodeString(privateKey)
 
 		config := &ClientOpts{
@@ -310,8 +310,7 @@ func (c *Client) GetClientInfo(ctx context.Context, clientID string) (*ClientInf
 	var u, method string
 
 	if strings.Contains(clientID, "@") {
-		u = fmt.Sprintf("%s/v1/storage/clients/find?email=%s", c.apiURL(), url.QueryEscape(clientID))
-		method = "POST"
+		return nil, errors.New("Email lookup is not supported.")
 	} else {
 		u = fmt.Sprintf("%s/v1/storage/clients/%s", c.apiURL(), url.QueryEscape(clientID))
 		method = "GET"
@@ -349,9 +348,9 @@ func (c *Client) getClientKey(ctx context.Context, clientID string) (PublicKey, 
 	return MakePublicKey(key), nil
 }
 
-// ReadRaw reads a record given a record ID and returns the record without
+// readRaw reads a record given a record ID and returns the record without
 // decrypting data fields.
-func (c *Client) ReadRaw(ctx context.Context, recordID string) (*Record, error) {
+func (c *Client) readRaw(ctx context.Context, recordID string) (*Record, error) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), recordID), nil)
 	if err != nil {
 		return nil, err
@@ -369,7 +368,7 @@ func (c *Client) ReadRaw(ctx context.Context, recordID string) (*Record, error) 
 
 // Read reads a record given a record ID, decrypts it, and returns the result.
 func (c *Client) Read(ctx context.Context, recordID string) (*Record, error) {
-	record, err := c.ReadRaw(ctx, recordID)
+	record, err := c.readRaw(ctx, recordID)
 	if err != nil {
 		return nil, err
 	}
@@ -449,9 +448,14 @@ func (c *Client) Update(ctx context.Context, record *Record) error {
 	return nil
 }
 
-// Delete deletes a record given a record ID.
-func (c *Client) Delete(ctx context.Context, recordID string) error {
+// Delete removes a record, with optional optimistic locking
+func (c *Client) Delete(ctx context.Context, recordID string, version string) error {
 	u := fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), url.QueryEscape(recordID))
+
+	if version != "" {
+		u = fmt.Sprintf("%s/v1/storage/records/safe/%s/%s", c.apiURL(), url.QueryEscape(recordID), url.QueryEscape(version))
+	}
+
 	req, err := http.NewRequest("DELETE", u, nil)
 	if err != nil {
 		return err

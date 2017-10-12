@@ -342,22 +342,26 @@ func cmdReadFile(cmd *cli.Cmd) {
 }
 
 func cmdDelete(cmd *cli.Cmd) {
-	recordIDs := cmd.Strings(cli.StringsArg{
+	recordID := cmd.String(cli.StringArg{
 		Name:      "RECORD_ID",
-		Desc:      "record IDs to delete",
-		Value:     nil,
+		Desc:      "record ID to delete",
+		Value:     "",
 		HideValue: true,
 	})
 
-	cmd.Spec = "RECORD_ID..."
+	version := cmd.String(cli.StringArg{
+		Name:      "VERSION",
+		Desc:      "version ID of the record to delete",
+		Value:     "",
+		HideValue: true,
+	})
+
 	cmd.Action = func() {
 		client := options.getClient()
 
-		for _, recordID := range *recordIDs {
-			err := client.Delete(context.Background(), recordID)
-			if err != nil {
-				dieErr(err)
-			}
+		err := client.Delete(context.Background(), *recordID, *version)
+		if err != nil {
+			dieErr(err)
 		}
 	}
 }
@@ -526,10 +530,7 @@ func cmdFeedback(cmd *cli.Cmd) {
 		fmt.Print("What's your impression so far?\n")
 		text, _ := reader.ReadString('\n')
 
-		toznyClientID, e := getClientID(client, "ijones+feedback@tozny.com")
-		if e != nil {
-			dieErr(errors.New("Feedback address not registered."))
-		}
+		toznyClientID := "db1744b9-3fb6-4458-a291-0bc677dba08b"
 
 		// Write feedback to the database
 		data := make(map[string]string)
@@ -640,9 +641,9 @@ func cmdRegister(cmd *cli.Cmd) {
 			dieErr(err)
 		}
 
-		publicKey := e3db.ClientKey{Curve25519: base64.RawURLEncoding.EncodeToString(pub[:])}
+		publicKey := base64.RawURLEncoding.EncodeToString(pub[:])
 
-		details, err := e3db.RegisterClient(*token, *email, publicKey, *apiBaseURL)
+		details, err := e3db.RegisterClient(*token, *email, publicKey, "", false, *apiBaseURL)
 
 		if err != nil {
 			dieErr(err)
