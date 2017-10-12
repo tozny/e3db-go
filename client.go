@@ -305,7 +305,7 @@ func (c *Client) rawCall(ctx context.Context, req *http.Request, jsonResult inte
 }
 
 // GetClientInfo queries the E3DB server for a client's public
-// information given its client UUID or email (if enabled).
+// information given its client UUID.
 func (c *Client) GetClientInfo(ctx context.Context, clientID string) (*ClientInfo, error) {
 	var u, method string
 
@@ -419,7 +419,7 @@ func (c *Client) Write(ctx context.Context, recordType string, data map[string]s
 	return record, nil
 }
 
-// Updates a record, if the version field matches the
+// Update a record, if the version field matches the
 // version stored by E3DB.
 //
 // Returns HTTP 409 (Conflict) in error if the record cannot be updated.
