@@ -61,9 +61,9 @@ glide install
 
 ## Registering a client
 
-Register an account with [InnoVault](https://inoovault.io) to get started. From the Admin Console you can create clients directly (and grab their credentials from the console) or create registration tokens to dynamically create clients with `e3db.RegisterClient()`. Clients registered from within the console will automatically back their credentials up to your account. Clients created dynamically via the SDK can _optionally_ back their credentials up to your account.
+Register an account with [InnoVault](https://innovault.io) to get started. From the Admin Console you can create clients directly (and grab their credentials from the console) or create registration tokens to dynamically create clients with `e3db.RegisterClient()`. Clients registered from within the console will automatically back their credentials up to your account. Clients created dynamically via the SDK can _optionally_ back their credentials up to your account.
 
-For a more complete walkthrough, see [`/registration_example/registration.php`](https://github.com/tozny/e3db-go/blob/master/registration_example/registration.php).
+For a more complete walkthrough, see [`/registration_example/registration.go`](https://github.com/tozny/e3db-go/blob/master/registration_example/registration.go).
 
 ### Without Credential Backup
 
