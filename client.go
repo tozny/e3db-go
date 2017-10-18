@@ -350,8 +350,19 @@ func (c *Client) getClientKey(ctx context.Context, clientID string) (PublicKey, 
 
 // readRaw reads a record given a record ID and returns the record without
 // decrypting data fields.
-func (c *Client) readRaw(ctx context.Context, recordID string) (*Record, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), recordID), nil)
+func (c *Client) readRaw(ctx context.Context, recordID string, fields []string) (*Record, error) {
+	path := fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), recordID)
+
+	if fields != nil {
+		mappedFields := make([]string, len(fields))
+		for i, v := range fields {
+			mappedFields[i] = fmt.Sprintf("field=%s", v)
+		}
+		fieldList := strings.Join(mappedFields, "&")
+		path = fmt.Sprintf("%s?%s", path, fieldList)
+	}
+
+	req, err := http.NewRequest("GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +379,13 @@ func (c *Client) readRaw(ctx context.Context, recordID string) (*Record, error) 
 
 // Read reads a record given a record ID, decrypts it, and returns the result.
 func (c *Client) Read(ctx context.Context, recordID string) (*Record, error) {
-	record, err := c.readRaw(ctx, recordID)
+	return c.ReadFields(ctx, recordID, nil)
+}
+
+// ReadFields reads a record given a record ID, selecting a subset of fields,
+// and returns a decrypted result.
+func (c *Client) ReadFields(ctx context.Context, recordID string, fields []string) (*Record, error) {
+	record, err := c.readRaw(ctx, recordID, fields)
 	if err != nil {
 		return nil, err
 	}
