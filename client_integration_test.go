@@ -225,6 +225,40 @@ func TestWriteRead(t *testing.T) {
 	}
 }
 
+func TestFieldSelect(t *testing.T) {
+	data := make(map[string]string)
+	data["visible"] = "This will come back"
+	data["alsovisible"] = "So will this"
+	data["hidden"] = "This will not"
+	record, err := client.Write(context.Background(), "test-fields", data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := []string{"visible", "alsovisible"}
+
+	retrieved, err := client.ReadFields(context.Background(), record.Meta.RecordID, fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if record.Meta.RecordID != retrieved.Meta.RecordID {
+		t.Errorf("Record IDs don't match: %s != %s", record.Meta.RecordID, retrieved.Meta.RecordID)
+	}
+
+	if retrieved.Data["visible"] != "This will come back" {
+		t.Error("Record field 'visible' was not found")
+	}
+
+	if retrieved.Data["alsovisible"] != "So will this" {
+		t.Error("Record field 'alsovisible' was not found")
+	}
+
+	if _, hasKey := retrieved.Data["hidden"]; hasKey {
+		t.Error("Record field 'hidden' was not filtered out")
+	}
+}
+
 func TestWriteReadNoCache(t *testing.T) {
 	data := make(map[string]string)
 	data["message"] = "Hello, world!"
