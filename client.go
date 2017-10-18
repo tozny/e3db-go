@@ -353,7 +353,7 @@ func (c *Client) getClientKey(ctx context.Context, clientID string) (PublicKey, 
 func (c *Client) readRaw(ctx context.Context, recordID string, fields []string) (*Record, error) {
 	path := fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), recordID)
 
-	if fields != nil {
+	if fields != nil && len(fields) > 0 {
 		mappedFields := make([]string, len(fields))
 		for i, v := range fields {
 			mappedFields[i] = fmt.Sprintf("field=%s", url.QueryEscape(v))
