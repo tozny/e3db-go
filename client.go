@@ -356,7 +356,7 @@ func (c *Client) readRaw(ctx context.Context, recordID string, fields []string) 
 	if fields != nil {
 		mappedFields := make([]string, len(fields))
 		for i, v := range fields {
-			mappedFields[i] = fmt.Sprintf("field=%s", v)
+			mappedFields[i] = fmt.Sprintf("field=%s", url.QueryEscape(v))
 		}
 		fieldList := strings.Join(mappedFields, "&")
 		path = fmt.Sprintf("%s?%s", path, fieldList)
