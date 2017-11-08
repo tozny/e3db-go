@@ -670,7 +670,7 @@ func cmdRegister(cmd *cli.Cmd) {
 func main() {
 	app := cli.App("e3db-cli", "E3DB Command Line Interface")
 
-	app.Version("v version", "e3db-cli 2.0.0")
+	app.Version("v version", "e3db-cli 2.1.1")
 
 	options.Logging = app.BoolOpt("d debug", false, "enable debug logging")
 	options.Profile = app.StringOpt("p profile", "", "e3db configuration profile")
