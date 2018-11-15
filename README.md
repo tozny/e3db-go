@@ -133,16 +133,28 @@ the correct type with NewRecord. Then fill in the fields of the record's
 `Write`, which returns the unique ID of the newly created record.
 
 ```go
-record := client.NewRecord("contact")
-record.Data["first_name"] = "Jon"
-record.Data["last_name"]  = "Snow"
-record.Data["phone"]      = "555-555-1212"
-recordID, err := client.Write(context.Background(), record)
+// Create data for a record
+var recordData map[string]string
+recordType := "contact"
+recordData["first_name"] = "Jon"
+recordData["last_name"]  = "Snow"
+recordData["phone"]      = "555-555-1212"
+// Create optional metadata for the record(metadata can be used for searching)
+var metadata map[string]string
+matadata["realm"] = "The North"
+metadata["pet"]   = "Ghost"
+// Encrypt and save the record
+recordID, err := client.Write(context.Background(), recordType, recordData, metadata)
+if err != nil {
+	//Error handling omitted
+}
 fmt.Println("Wrote record: " + recordID)
-// Read it back out:
+// Retrieve the saved record
 newRecord, err := client.Read(context.Background(), recordID)
+if err != nil {
+	//Error handling omitted
+}
 fmt.Println (newRecord.Data["first_name"])
-
 ```
 
 ## Documentaton
