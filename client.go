@@ -5,6 +5,16 @@
 // All Rights Reserved.
 //
 
+/*
+Package e3db provides programmatic access to the e3db API/Innovault service for the secure transmission and storage of arbitrary data encrypted locally using this SDK.
+
+Official documentation for e3db can be found at https://tozny.com/documentation/e3db/
+
+If not using go mod command for your project:
+	  import "github.com/tozny/e3db-go"
+Otherwise
+	  import "github.com/tozny/e3db-go/v2"
+*/
 package e3db
 
 import (
@@ -56,6 +66,7 @@ type Client struct {
 	akCache    map[akCacheKey]secretKey
 }
 
+// ClientKey contains a cryptographic key for use in client operations.
 type ClientKey struct {
 	Curve25519 string `json:"curve25519"`
 }
@@ -465,7 +476,7 @@ func (c *Client) Update(ctx context.Context, record *Record) error {
 	return nil
 }
 
-// Delete removes a record, with optional optimistic locking
+// Delete removes a record, with optional optimistic locking.
 func (c *Client) Delete(ctx context.Context, recordID string, version string) error {
 	u := fmt.Sprintf("%s/v1/storage/records/%s", c.apiURL(), url.QueryEscape(recordID))
 
@@ -487,7 +498,7 @@ func (c *Client) Delete(ctx context.Context, recordID string, version string) er
 	return nil
 }
 
-// Backup backs up the client's credentials to an account with which it's registered
+// Backup backs up the client's credentials to an account with which it's registered.
 func (c *Client) Backup(ctx context.Context, clientID string, registrationToken string) error {
 	credentials := make(map[string]string)
 	credentials["version"] = "1"
@@ -719,7 +730,7 @@ func (c *Client) NewEventSource(ctx context.Context) (*EventSource, error) {
 	return &source, nil
 }
 
-// Subscribe to a specific event stream
+// Subscribe to a specific event stream.
 func (c *EventSource) Subscribe(channel Channel) {
 	command := subscription{
 		Action:  "attach",
@@ -729,7 +740,7 @@ func (c *EventSource) Subscribe(channel Channel) {
 	c.commands <- command
 }
 
-// Unsubscribe from a specific event stream
+// Unsubscribe from a specific event stream.
 func (c *EventSource) Unsubscribe(channel Channel) {
 	command := subscription{
 		Action:  "detach",
@@ -739,12 +750,12 @@ func (c *EventSource) Unsubscribe(channel Channel) {
 	c.commands <- command
 }
 
-// Close the underlying websocket connection
+// Close the underlying websocket connection.
 func (c *EventSource) Close() error {
 	return c.conn.Close()
 }
 
-// Events produces a one-way version of the event-bearing channel
+// Events produces a one-way version of the event-bearing channel.
 func (c *EventSource) Events() <-chan Event {
 	return c.events
 }

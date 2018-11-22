@@ -11,12 +11,13 @@ fi
 rm -rf build
 mkdir -p build
 
-glide install
+export XDG_CACHE_HOME="/tmp/.cache"
+CGO_ENABLED=0 go build
 
 for os in darwin linux windows; do
   for arch in 386 amd64; do
     CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build ./cmd/e3db
-    case $os in 
+    case $os in
         windows)
             mv e3db.exe build/e3db-$os-$arch$suffix.exe
             ;;

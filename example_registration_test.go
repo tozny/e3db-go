@@ -1,4 +1,4 @@
-package main
+package e3db_test
 
 // This program provides a simple example illustrating how to programmatically
 // register a client with InnoVault and e3db. In some situations, it's preferable
@@ -18,7 +18,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/tozny/e3db-go"
+	"github.com/tozny/e3db-go/v2"
 )
 
 // randomSecretKey is otherwise private to the client and is used to generate
@@ -35,7 +35,7 @@ func randomSecretKey() *[32]byte {
 	return key
 }
 
-func main() {
+func ExampleRegisterClient() {
 	// A registration token is required to set up a client. In this situation,
 	// we assume an environment variable called REGISTRATION_TOKEN is set
 	token := os.Getenv("REGISTRATION_TOKEN")

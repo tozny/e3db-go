@@ -1,21 +1,19 @@
 language: go
 
 go:
-  - 1.7
-  - 1.8
+  - 1.11
   - tip
 
 install:
-  - go get -v github.com/Masterminds/glide
-  - cd $GOPATH/src/github.com/Masterminds/glide && git checkout 84607742b10f492430762d038e954236bbaf23f7 && go install && cd -
-  - glide install
+  - go build
   - go get github.com/mattn/goveralls
   - ./travis-install-configfile.sh
 
 script:
   - go test -v -covermode=count -coverprofile=coverage.out --tags integration
-  - $(go env GOPATH | awk 'BEGIN{FS=":"} {print $1}')/bin/goveralls -coverprofile=coverage.out -service=travis-ci -repotoken $COVERALLS_TOKEN
+  - goveralls -coverprofile=coverage.out -service=travis-ci -repotoken $COVERALLS_TOKEN
 
 env:
   global:
-    secure: BE18nJ2H83YDxR/afzVhqepLjbVf3GotMAmBMg4eNw66jnBN9CQqaBNZyxHkp2QuMXRq0QRREZTSe/GZbLeS4LSYiTHvU9IYbW48E/m0AOLzeDYsH9DxCQjDp36qXqlPNbIslxXjqErkZHUSp5oGiSSZa+oDmJYsUnXT4AUJbJE7Itgnzb1MxF0l2uLdx1KG3P8V4XrqPkFoCSkjM3nXl6A9d07dQv1zFqjcOSHmVgehwl9v5kW6ejPZS4esyrh5C80PKs3Sr5aWCEIwR+ualFJLJjbLpGzMCS9hZy5PXNFiGlO517dUEyAb2s44cmaHKhoCFjGnS+LgAxrZ/xZ7s9jKYKReiEa8mO+GYXzd+/tJKvfduGohd0Lc29Cx8J3SEMhbTdo58yJXXIciof/2jnZhyHaSbHxoZkNsp8KQAteQxv+lhFW06rTD65x4LP/3jGbSLz7Vg2G0z9JLDopdqZej/duiH632QqJMP1ABPjgh/adI3oyQz7omilCswpJyuN7as2az8B224R+atnjgiFQH/DbpjpCdhRdjcwBhg1jlQ/hA1Eglh/c3H3ZlPbsgsHZqjstksNxFJTfIIh3wG3PZsji9YWsw+T2ZSfjcEvhEpi4psl0dIgKlGfIJm3joeSLrHGcQkRO9DnyNgAYYP7ppsWkRBnAVfMuzYycrCYI=
+    - secure: BE18nJ2H83YDxR/afzVhqepLjbVf3GotMAmBMg4eNw66jnBN9CQqaBNZyxHkp2QuMXRq0QRREZTSe/GZbLeS4LSYiTHvU9IYbW48E/m0AOLzeDYsH9DxCQjDp36qXqlPNbIslxXjqErkZHUSp5oGiSSZa+oDmJYsUnXT4AUJbJE7Itgnzb1MxF0l2uLdx1KG3P8V4XrqPkFoCSkjM3nXl6A9d07dQv1zFqjcOSHmVgehwl9v5kW6ejPZS4esyrh5C80PKs3Sr5aWCEIwR+ualFJLJjbLpGzMCS9hZy5PXNFiGlO517dUEyAb2s44cmaHKhoCFjGnS+LgAxrZ/xZ7s9jKYKReiEa8mO+GYXzd+/tJKvfduGohd0Lc29Cx8J3SEMhbTdo58yJXXIciof/2jnZhyHaSbHxoZkNsp8KQAteQxv+lhFW06rTD65x4LP/3jGbSLz7Vg2G0z9JLDopdqZej/duiH632QqJMP1ABPjgh/adI3oyQz7omilCswpJyuN7as2az8B224R+atnjgiFQH/DbpjpCdhRdjcwBhg1jlQ/hA1Eglh/c3H3ZlPbsgsHZqjstksNxFJTfIIh3wG3PZsji9YWsw+T2ZSfjcEvhEpi4psl0dIgKlGfIJm3joeSLrHGcQkRO9DnyNgAYYP7ppsWkRBnAVfMuzYycrCYI=
+    - GO111MODULE=on
