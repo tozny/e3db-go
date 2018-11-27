@@ -123,13 +123,13 @@ func secretBoxDecryptFromBase64(ciphertext, nonce string, key secretKey) ([]byte
 const publicKeySize = 32
 const privateKeySize = 32
 
-// PublicKey is an alias of a 32-byte array representing the public key component
+// PublicKey is an alias of a 32-byte array representing the public key component.
 type PublicKey *[publicKeySize]byte
 
-// PrivateKey is an alias of a 32-byte array representing the private key component
+// PrivateKey is an alias of a 32-byte array representing the private key component.
 type PrivateKey *[privateKeySize]byte
 
-// GenerateKeyPair creates a new Curve25519 keypair for cryptographic operations
+// GenerateKeyPair creates a new Curve25519 keypair for cryptographic operations.
 func GenerateKeyPair() (string, string, error) {
 	pub, priv, err := box.GenerateKey(rand.Reader)
 	if err != nil {
@@ -139,7 +139,7 @@ func GenerateKeyPair() (string, string, error) {
 	return encodePublicKey(pub), encodePrivateKey(priv), nil
 }
 
-// MakePublicKey converts a byte array to a PublicKey type
+// MakePublicKey converts a byte array to a PublicKey type.
 func MakePublicKey(b []byte) PublicKey {
 	key := [publicKeySize]byte{}
 	copy(key[:], b)
@@ -162,7 +162,7 @@ func encodePublicKey(k PublicKey) string {
 	return base64Encode(k[:])
 }
 
-// MakePrivateKey converts a byte array to a PrivateKey type
+// MakePrivateKey converts a byte array to a PrivateKey type.
 func MakePrivateKey(b []byte) PrivateKey {
 	key := [privateKeySize]byte{}
 	copy(key[:], b)
@@ -403,7 +403,7 @@ func (c *Client) decryptRecordWithKey(record *Record, ak secretKey) error {
 	return nil
 }
 
-// encryptRecord mencrypting all data fields in a record
+// encryptRecord encrypts all data fields in a record
 // using an access key granted by the authorizer, returning
 // a new record.
 func (c *Client) encryptRecord(ctx context.Context, record *Record) (*Record, error) {

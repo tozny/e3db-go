@@ -13,10 +13,7 @@ This repository contains a client library and command-line tool E3DB.
 
 ## Build Prerequisites
 
-e3db uses Glide for dependency management. For more information
-and installation instructions, see the [Glide Web Site](https://glide.sh).
-Binaries for many platforms can be downloaded from the
-[GitHub Releases Page](https://github.com/Masterminds/glide/releases).
+e3db uses native go modules for dependency management, which requires a version of go >= 1.11.
 
 # Command-Line Interface
 
@@ -27,13 +24,13 @@ platforms are available from this project's Releases page.
 ## Building the CLI
 
 To build a local version of the command-line interface, check out the
-sources into the appropriate location within `$GOPATH`, install
-dependencies using Glide, and build the `github.com/tozny/e3db/cmd/e3db` package:
+sources locally, install
+dependencies, and build the `github.com/tozny/e3db/cmd/e3db` package:
 
 ```shell
-git clone https://github.com/tozny/e3db-go $GOPATH/src/github.com/tozny/e3db-go
-cd $GOPATH/src/github.com/tozny/e3db-go
-glide install
+git clone https://github.com/tozny/e3db-go
+cd e3db-go
+go build
 go install ./cmd/e3db
 ```
 
@@ -41,22 +38,12 @@ go install ./cmd/e3db
 
 ## Installation
 
-If your project uses Glide for managing dependencies and
-reproducible builds, add the E3DB client library to your `glide.yaml`
+If your project uses go modules for managing dependencies and
+reproducible builds, add the E3DB client library to your `go.mod`
 by running:
 
 ```shell
-$ glide get github.com/tozny/e3db-go
-```
-
-If you aren't using Glide and want to depend on the latest
-version of E3DB, check out the repository to the correct
-location within `$GOPATH` and install dependencies using Glide.
-
-```shell
-git clone https://github.com/tozny/e3db-go $GOPATH/src/github.com/tozny/e3db-go
-cd $GOPATH/src/github.com/tozny/e3db-go
-glide install
+$ go get github.com/tozny/e3db-go/v2
 ```
 
 ## Registering a client

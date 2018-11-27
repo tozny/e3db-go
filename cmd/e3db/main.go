@@ -27,7 +27,7 @@ import (
 	"golang.org/x/crypto/nacl/box"
 
 	"github.com/jawher/mow.cli"
-	"github.com/tozny/e3db-go"
+	"github.com/tozny/e3db-go/v2"
 )
 
 type cliOptions struct {

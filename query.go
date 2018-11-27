@@ -18,15 +18,16 @@ import (
 
 // Q contains options for querying a set of records in the database.
 type Q struct {
-	Count             int               `json:"count"`
-	IncludeData       bool              `json:"include_data,omitempty"`
-	WriterIDs         []string          `json:"writer_ids,omitempty"`
-	UserIDs           []string          `json:"user_ids,omitempty"`
-	RecordIDs         []string          `json:"record_ids,omitempty"`
-	ContentTypes      []string          `json:"content_types,omitempty"`
-	AfterIndex        int               `json:"after_index,omitempty"`
+	Count       int  `json:"count"`                  //The maximum number of records to return.
+	IncludeData bool `json:"include_data,omitempty"` //If true, include record data with results.
+
+	WriterIDs         []string          `json:"writer_ids,omitempty"`    //If not empty, limit results to records written by the given set of IDs.
+	UserIDs           []string          `json:"user_ids,omitempty"`      //If not null, limit results to records about given set of IDs.
+	RecordIDs         []string          `json:"record_ids,omitempty"`    //If not empty, limit results to the records specified.
+	ContentTypes      []string          `json:"content_types,omitempty"` //If not empty, limit results to records of the given types.
+	AfterIndex        int               `json:"after_index,omitempty"`   //If greater than 0, limit results to the records appearing "after" the given index.
 	Plain             map[string]string `json:"plain,omitempty"`
-	IncludeAllWriters bool              `json:"include_all_writers,omitempty"`
+	IncludeAllWriters bool              `json:"include_all_writers,omitempty"` //If true, include all records shared with this client.
 }
 
 type searchRecord struct {
