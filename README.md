@@ -89,7 +89,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/tozny/e3db-go"
+	"github.com/tozny/e3db-go/v2"
 )
 
 func main() {
