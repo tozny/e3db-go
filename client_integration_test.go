@@ -391,40 +391,6 @@ func TestIncomingSharing(t *testing.T) {
 	}
 }
 
-// TestEvents should create and utilize an event stream
-func TestEvents(t *testing.T) {
-	channel := Channel{
-		Application: "e3db",
-		Type:        "producer",
-		Subject:     client.Options.ClientID,
-	}
-
-	source, err := client.NewEventSource(context.Background())
-	if err != nil {
-		dieErr(err)
-	}
-	defer source.Close()
-
-	events := 0
-	done := make(chan struct{})
-
-	go func() {
-		for range source.Events() {
-			events = events + 1
-			if events == 3 {
-				close(done)
-			}
-		}
-	}()
-
-	source.Subscribe(channel)
-
-	source.Unsubscribe(channel)
-
-	for range done {
-	}
-}
-
 func TestCounter(t *testing.T) {
 	data := make(map[string]string)
 	data["counter"] = "1"
