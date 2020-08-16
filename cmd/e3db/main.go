@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/mail"
 	"os"
 	"path/filepath"
@@ -45,7 +44,7 @@ func dieErr(err error) {
 
 func dieFmt(format string, args ...interface{}) {
 	fmt.Fprint(os.Stderr, "e3db-cli: ")
-	fmt.Fprintf(os.Stderr, format, args)
+	fmt.Fprintf(os.Stderr, format, args...)
 	fmt.Fprint(os.Stderr, "\n")
 	cli.Exit(1)
 }
@@ -460,67 +459,6 @@ func cmdUnshare(cmd *cli.Cmd) {
 	}
 }
 
-func cmdSubscribe(cmd *cli.Cmd) {
-	app := cmd.String(cli.StringArg{
-		Name:      "APP",
-		Desc:      "application name",
-		Value:     "e3db",
-		HideValue: true,
-	})
-
-	eventType := cmd.String(cli.StringArg{
-		Name:      "TYPE",
-		Desc:      "channel type",
-		Value:     "",
-		HideValue: true,
-	})
-
-	clientID := cmd.String(cli.StringArg{
-		Name:      "CLIENT_ID",
-		Desc:      "client unique id or email",
-		Value:     "",
-		HideValue: true,
-	})
-
-	cmd.Spec = "APP [TYPE] [CLIENT_ID]"
-
-	cmd.Action = func() {
-		client := options.getClient()
-
-		if *clientID == "" {
-			*clientID = client.Options.ClientID
-		}
-		if *eventType == "" {
-			*eventType = "producer"
-		}
-
-		channel := e3db.Channel{
-			Application: *app,
-			Type:        *eventType,
-			Subject:     *clientID,
-		}
-
-		source, err := client.NewEventSource(context.Background())
-		if err != nil {
-			dieErr(err)
-		}
-		defer source.Close()
-
-		source.Subscribe(channel)
-
-		go func() {
-			for event := range source.Events() {
-				b, _ := json.MarshalIndent(event, "  ", "  ")
-				log.Println(string(b))
-			}
-		}()
-
-		var input string
-		fmt.Scanln(&input)
-		fmt.Println("done")
-	}
-}
-
 func cmdFeedback(cmd *cli.Cmd) {
 	cmd.Action = func() {
 		client := options.getClient()
@@ -687,7 +625,6 @@ func main() {
 		cmd.Command("incoming", "list incoming sharing policy (who shares with me?)", cmdPolicyIncoming)
 		cmd.Command("outgoing", "list outgoing sharing policy (who have I shared with?)", cmdPolicyOutgoing)
 	})
-	app.Command("subscribe", "subscribe to a stream of events produced by a client", cmdSubscribe)
 	app.Command("feedback", "provde e3db feedback to Tozny", cmdFeedback)
 	app.Command("file", "work with small files", func(cmd *cli.Cmd) {
 		cmd.Command("read", "read a small file", cmdReadFile)
