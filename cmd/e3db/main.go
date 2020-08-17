@@ -1,7 +1,7 @@
 //
 // main.go --- e3db command line tool.
 //
-// Copyright (C) 2017, Tozny, LLC.
+// Copyright (C) 2020, Tozny, LLC.
 // All Rights Reserved.
 //
 
@@ -23,10 +23,9 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/crypto/nacl/box"
-
 	"github.com/jawher/mow.cli"
 	"github.com/tozny/e3db-go/v2"
+	"golang.org/x/crypto/nacl/box"
 )
 
 type cliOptions struct {
@@ -630,5 +629,57 @@ func main() {
 		cmd.Command("read", "read a small file", cmdReadFile)
 		cmd.Command("write", "write a small file", cmdWriteFile)
 	})
+	app.Command("lsrealms", "list realms", cmdListRealms)
 	app.Run(os.Args)
+}
+
+/**
+SDK V3 prototyping below.
+Not for external production use.
+Interface is rapidly evolving.
+*/
+
+func cmdListRealms(cmd *cli.Cmd) {
+	useJSON := *cmd.BoolOpt("j json", false, "output in JSON format")
+	enabledRealmsOnly := *cmd.BoolOpt("e enabled-realms-only", false, "only include enabled realms in output")
+	if enabledRealmsOnly {
+
+	}
+	cmd.Spec = "[OPTIONS] "
+
+	cmd.Action = func() {
+		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		if err != nil {
+			dieErr(err)
+		}
+		ctx := context.Background()
+		first := true
+		listRealmResponse, err := sdk.ListRealms(ctx)
+		if err != nil {
+			dieErr(err)
+		}
+		for _, realm := range listRealmResponse.Realms {
+			if useJSON {
+				if first {
+					first = false
+					fmt.Println("[")
+				} else {
+					fmt.Printf(",\n")
+				}
+
+				buffer := bytes.Buffer{}
+				encoder := json.NewEncoder(&buffer)
+				encoder.SetEscapeHTML(false)
+				encoder.SetIndent("  ", "  ")
+				encoder.Encode(realm)
+				fmt.Printf("  %s", buffer.Bytes())
+			} else {
+				fmt.Printf("%d %s\n", realm.ID, realm.AdminURL)
+			}
+		}
+
+		if useJSON {
+			fmt.Println("\n]")
+		}
+	}
 }

@@ -33,6 +33,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tozny/e3db-clients-go"
+	"github.com/tozny/e3db-clients-go/accountClient"
+	"github.com/tozny/e3db-clients-go/identityClient"
 	"golang.org/x/oauth2/clientcredentials"
 )
 
@@ -624,4 +627,90 @@ func (c *Client) GetIncomingSharing(ctx context.Context) ([]IncomingSharingPolic
 
 	defer closeResp(resp)
 	return isp, nil
+}
+
+/**
+SDK V3 prototyping below.
+Not for external production use.
+Interface is rapidly evolving.
+*/
+
+// ToznySDKV3 wraps config and higher level methods for service agnostic &
+// user centric operations for accomplishing both low level and complex tasks.
+type ToznySDKV3 struct {
+	// Embedded low level client to use for account authenticated operations
+	// By embedded individual clients it allows for collecting and centralizing
+	// all interactions with Tozny services behind a single interface (ToznySDK)
+	// e.g. toznySDK.CreateAccount(ctx context.Context, params accountClient.CreateAccountRequest)
+	*accountClient.E3dbAccountClient
+	*identityClient.E3dbIdentityClient
+	// Account public authentication material for creating and deriving account credentials
+	AccountUsername string
+	// Account private authentication material for creating and deriving account credentials
+	AccountPassword string
+	// Network location of the Tozny services to communicate with.
+	APIEndpoint string
+}
+
+// ToznySDKConfig wraps parameters needed to configure a ToznySDK
+type ToznySDKConfig struct {
+	e3dbClients.ClientConfig
+	AccountUsername string `json:"account_username"`
+	AccountPassword string `json:"account_password"`
+	APIEndpoint     string `json:"api_url"`
+}
+
+// NewToznySDK returns a new instance of the ToznySDK initialized with the provided
+// config or error (if any).
+func NewToznySDKV3(config ToznySDKConfig) (*ToznySDKV3, error) {
+	accountServiceClient := accountClient.New(config.ClientConfig)
+	identityClient := identityClient.New(config.ClientConfig)
+	return &ToznySDKV3{
+		E3dbAccountClient:  &accountServiceClient,
+		E3dbIdentityClient: &identityClient,
+		AccountUsername:    config.AccountUsername,
+		AccountPassword:    config.AccountPassword,
+		APIEndpoint:        config.APIEndpoint,
+	}, nil
+}
+
+// GetSDKV3 creates a V3 Tozny SDK based off the JSON contents
+// of the file at the specified path, returning config and error (if any).
+func GetSDKV3(configJSONFilePath string) (*ToznySDKV3, error) {
+	config, err := LoadConfigFile(configJSONFilePath)
+	if err != nil {
+		return nil, err
+	}
+	return NewToznySDKV3(ToznySDKConfig{
+		ClientConfig: e3dbClients.ClientConfig{
+			ClientID:  config.ClientID,
+			APIKey:    config.APIKeyID,
+			APISecret: config.APISecret,
+			Host:      config.APIBaseURL,
+			AuthNHost: config.APIBaseURL,
+			SigningKeys: e3dbClients.SigningKeys{
+				Public: e3dbClients.Key{
+					Type:     e3dbClients.DefaultSigningKeyType,
+					Material: config.PublicSigningKey,
+				},
+				Private: e3dbClients.Key{
+					Type:     e3dbClients.DefaultSigningKeyType,
+					Material: config.PrivateSigningKey,
+				},
+			},
+			EncryptionKeys: e3dbClients.EncryptionKeys{
+				Private: e3dbClients.Key{
+					Material: config.PrivateKey,
+					Type:     e3dbClients.DefaultEncryptionKeyType,
+				},
+				Public: e3dbClients.Key{
+					Material: config.PublicKey,
+					Type:     e3dbClients.DefaultEncryptionKeyType,
+				},
+			},
+		},
+		AccountUsername: config.AccountUsername,
+		AccountPassword: config.AccountPassword,
+		APIEndpoint:     config.APIBaseURL,
+	})
 }

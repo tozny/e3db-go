@@ -1,7 +1,7 @@
 //
 // config.go --- Configuration and profile management.
 //
-// Copyright (C) 2017, Tozny, LLC.
+// Copyright (C) 2020, Tozny, LLC.
 // All Rights Reserved.
 //
 
@@ -18,6 +18,15 @@ import (
 	"github.com/mitchellh/go-homedir"
 )
 
+const (
+	ProfileInterpolationConfigFilePath = "~/.tozny/%s/e3db.json"
+)
+
+var (
+	// Currently supported versions of config for a Tozny client used by this SDK
+	SupportedVesions = []int{1, 2}
+)
+
 type configFile struct {
 	Version     int    `json:"version"`
 	APIBaseURL  string `json:"api_url"`
@@ -28,6 +37,8 @@ type configFile struct {
 	PublicKey   string `json:"public_key"`
 	PrivateKey  string `json:"private_key"`
 }
+
+type ConfigFile = configFile
 
 func loadJSON(path string, obj interface{}) error {
 	path, err := homedir.Expand(path)
@@ -49,18 +60,27 @@ func loadJSON(path string, obj interface{}) error {
 }
 
 func loadConfig(configPath string) (*ClientOpts, error) {
-	var config configFile
+	config, err := LoadConfigFile(configPath)
 
-	if err := loadJSON(configPath, &config); err != nil {
+	if err != nil {
 		return nil, err
 	}
+	// Determine if the provided config version is supported
+	var configVersionSupported bool
+	providedVersion := config.Version
+	for _, supportedVersion := range SupportedVesions {
+		if providedVersion == supportedVersion {
+			configVersionSupported = true
+			break
+		}
+	}
 
-	if config.Version != 1 {
-		return nil, fmt.Errorf("e3db.loadConfig: unsupported config version: %d", config.Version)
+	if !configVersionSupported {
+		return nil, fmt.Errorf("e3db.loadConfig: unsupported config version: %d, supportedVersions %v", config.Version, SupportedVesions)
 	}
 
 	if config.PublicKey == "" {
-		return nil, errors.New("e3db.loadConfig: missing public key")
+		return nil, errors.New(fmt.Sprintf("e3db.loadConfig: missing public key %+v", config))
 	}
 
 	if config.PrivateKey == "" {
@@ -140,29 +160,57 @@ func fileExists(name string) (bool, error) {
 // ProfileExists returns true if a configuration exists for the
 // given profile name.
 func ProfileExists(profile string) bool {
-	configExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db.json", profile))
+	configExists, _ := fileExists(fmt.Sprintf(ProfileInterpolationConfigFilePath, profile))
 	keyExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db_key.json", profile))
 	return configExists && keyExists
 }
 
 // DefaultConfig loads the default E3DB configuration.
 func DefaultConfig() (*ClientOpts, error) {
-	return loadConfig(fmt.Sprintf("~/.tozny/e3db.json"))
+	return loadConfig(fmt.Sprintf(ProfileInterpolationConfigFilePath, ""))
 }
 
 // GetConfig loads an E3DB client configuration from a configuration
 // file given the name of the profile.
 func GetConfig(profile string) (*ClientOpts, error) {
-	opts, err := loadConfig(fmt.Sprintf("~/.tozny/%s/e3db.json", profile))
+	opts, err := loadConfig(fmt.Sprintf(ProfileInterpolationConfigFilePath, profile))
 	return opts, err
 }
 
 // SaveConfig writes an E3DB client configuration to a profile.
 func SaveConfig(profile string, opts *ClientOpts) error {
-	return saveConfig(fmt.Sprintf("~/.tozny/%s/e3db.json", profile), opts)
+	return saveConfig(fmt.Sprintf(ProfileInterpolationConfigFilePath, profile), opts)
 }
 
 // SaveDefaultConfig writes an E3DB client configuration to a profile.
 func SaveDefaultConfig(opts *ClientOpts) error {
 	return SaveConfig("", opts)
+}
+
+/**
+SDK V3 prototyping below.
+Not for external production use.
+Interface is rapidly evolving.
+*/
+
+// ToznySDKConfig wraps json file configuration
+// needed to initialize the Tozny SDK for account and or client operations.
+type ToznySDKJSONConfig struct {
+	// Embed all config for v1 and v2 clients
+	ConfigFile
+	PublicSigningKey  string `json:"public_signing_key"`
+	PrivateSigningKey string `json:"private_signing_key"`
+	AccountUsername   string `json:"account_user_name"`
+	AccountPassword   string `json:"account_password"`
+}
+
+// LoadConfigFile loads JSON configuration for a Tozny SDK from the file
+// at the specified path, returning an instance of that config or error (if any).
+func LoadConfigFile(configPath string) (ToznySDKJSONConfig, error) {
+	var config ToznySDKJSONConfig
+
+	if err := loadJSON(configPath, &config); err != nil {
+		return config, err
+	}
+	return config, nil
 }

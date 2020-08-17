@@ -17,3 +17,9 @@ lint:
 # Target for building a cli binary complied for the current platform
 build:
 	go build -o ${BINARY} ./cmd/${BINARY}
+
+# target for tagging and publishing a new version of the SDK
+# run like make version=X.Y.Z
+version:
+	git tag v${version}
+	git push origin v${version}
