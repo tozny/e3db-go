@@ -21,6 +21,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -713,4 +714,193 @@ func GetSDKV3(configJSONFilePath string) (*ToznySDKV3, error) {
 		AccountPassword: config.AccountPassword,
 		APIEndpoint:     config.APIBaseURL,
 	})
+}
+
+// CreateResponse wraps the value return from the account creation method
+type RegisterAccountResponse struct {
+	PaperKey string
+	Account  Account
+}
+
+// Account wraps the data needed to make TozStore account calls
+type Account struct {
+	AccountID string
+	Token     string
+	Config    ClientConfig
+	Client    *accountClient.E3dbAccountClient
+}
+
+// Challenge wraps the parameters needed to initiate and account login
+type Challenge struct {
+	Challenge     string `json:"challenge"`
+	AuthSalt      string `json:"auth_salt"`
+	PaperAuthSalt string `json:"paper_auth_salt"`
+}
+
+// AuthResponse wraps data returned from a completed login challenge
+type AuthResponse struct {
+	Token   string
+	Profile *accountClient.Profile
+	Account *accountClient.Account
+}
+
+// ProfileMeta wraps the JSON struct for account meta
+type ProfileMeta struct {
+	Enabled      string `json:"backupEnabled"`
+	BackupClient string `json:"backupClient"`
+	PaperBackup  string `json:"paperBackup"`
+}
+
+// ClientConfig provides a simpler way to serialize/deserialized client
+// credentials stored in account meta
+type ClientConfig struct {
+	Version           int    `json:"version"`
+	APIURL            string `json:"api_url"`
+	ClientEmail       string `json:"client_email"`
+	ClientID          string `json:"client_id"`
+	APIKeyID          string `json:"api_key_id"`
+	APISecret         string `json:"api_secret"`
+	PublicKey         string `json:"public_key"`
+	PrivateKey        string `json:"private_key"`
+	PublicSigningKey  string `json:"public_signing_key"`
+	PrivateSigningKey string `json:"private_signing_key"`
+}
+
+// Register attempts to create a valid TozStore account returning the root client config for the created account and error (if any).
+func (c *ToznySDKV3) Register(ctx context.Context, name string, email string, password string) (RegisterAccountResponse, error) {
+	const (
+		pwEncSalt  = "pwEncSalt"
+		pwAuthSalt = "pwAuthSalt"
+		pkEncSalt  = "pkEncSalt"
+		pkAuthSalt = "pkAuthSalt"
+	)
+	// Boot client
+	bootClientConfig := e3dbClients.ClientConfig{
+		Host:      c.APIEndpoint,
+		AuthNHost: c.APIEndpoint,
+	}
+	bootClient := accountClient.New(bootClientConfig)
+	var createResponse RegisterAccountResponse
+	var accountClientConfig = e3dbClients.ClientConfig{
+		Host:      c.APIEndpoint,
+		AuthNHost: c.APIEndpoint,
+	}
+	var accountResponse *accountClient.CreateAccountResponse
+
+	paperKeyRaw := make([]byte, 64)
+	_, err := rand.Read(paperKeyRaw)
+	if err != nil {
+		return createResponse, fmt.Errorf("reading bytes for paper key: %v", err)
+	}
+	paperKey := base64.RawURLEncoding.EncodeToString(paperKeyRaw)
+
+	salts := make(map[string][]byte, 4)
+	for _, name := range []string{pwEncSalt, pwAuthSalt, pkEncSalt, pkAuthSalt} {
+		salt := make([]byte, e3dbClients.SaltSize)
+		_, err = rand.Read(salt)
+		if err != nil {
+			return createResponse, fmt.Errorf("reading bytes for salt %s: %v", name, err)
+		}
+		salts[name] = salt
+	}
+
+	// Derive keys
+	pwSigningKey, _ := e3dbClients.DeriveSigningKey([]byte(password), salts[pwAuthSalt], e3dbClients.AccountDerivationRounds)
+	pwEncKey := e3dbClients.DeriveSymmetricKey([]byte(password), salts[pwEncSalt], e3dbClients.AccountDerivationRounds)
+	pkSigningKey, _ := e3dbClients.DeriveSigningKey([]byte(paperKey), salts[pwAuthSalt], e3dbClients.AccountDerivationRounds)
+	pkEncKey := e3dbClients.DeriveSymmetricKey([]byte(paperKey), salts[pkEncSalt], e3dbClients.AccountDerivationRounds)
+	// Generate client keys
+	encryptionKeypair, err := e3dbClients.GenerateKeyPair()
+	if err != nil {
+		return createResponse, fmt.Errorf("Failed generating encryption key pair %s", err)
+	}
+	signingKeys, err := e3dbClients.GenerateSigningKeys()
+	if err != nil {
+		return createResponse, fmt.Errorf("Failed generating signing key pair %s", err)
+	}
+	createAccountParams := accountClient.CreateAccountRequest{
+		Profile: accountClient.Profile{
+			Name:               email,
+			Email:              email,
+			AuthenticationSalt: base64.RawURLEncoding.EncodeToString(salts[pwAuthSalt]),
+			EncodingSalt:       base64.RawURLEncoding.EncodeToString(salts[pwEncSalt]),
+			SigningKey: accountClient.EncryptionKey{
+				Ed25519: base64.RawURLEncoding.EncodeToString(pwSigningKey[:]),
+			},
+			PaperAuthenticationSalt: base64.RawURLEncoding.EncodeToString(salts[pkAuthSalt]),
+			PaperEncodingSalt:       base64.RawURLEncoding.EncodeToString(salts[pkEncSalt]),
+			PaperSigningKey: accountClient.EncryptionKey{
+				Ed25519: base64.RawURLEncoding.EncodeToString(pkSigningKey[:]),
+			},
+		},
+		Account: accountClient.Account{
+			Company: name,
+			Plan:    "free0",
+			PublicKey: accountClient.ClientKey{
+				Curve25519: encryptionKeypair.Public.Material,
+			},
+			SigningKey: accountClient.EncryptionKey{
+				Ed25519: signingKeys.Public.Material,
+			},
+		},
+	}
+	// Create an account and client for that account using the specified params
+	accountResponse, err = bootClient.CreateAccount(ctx, createAccountParams)
+	if err != nil {
+		return createResponse, fmt.Errorf("creating account with params: %v - %+v", err, createAccountParams)
+	}
+	clientConfig := ClientConfig{
+		Version:           2,
+		APIURL:            c.APIEndpoint,
+		ClientID:          accountResponse.Account.Client.ClientID,
+		APIKeyID:          accountResponse.Account.Client.APIKeyID,
+		APISecret:         accountResponse.Account.Client.APISecretKey,
+		PublicKey:         encryptionKeypair.Public.Material,
+		PrivateKey:        encryptionKeypair.Private.Material,
+		PublicSigningKey:  signingKeys.Public.Material,
+		PrivateSigningKey: signingKeys.Private.Material,
+	}
+	serializedConfig, err := json.Marshal(clientConfig)
+	if err != nil {
+		return createResponse, fmt.Errorf("serializing config: %v", err)
+	}
+	pwConfig := e3dbClients.Encrypt(serializedConfig, e3dbClients.MakeSymmetricKey(pwEncKey[:]))
+	pkConfig := e3dbClients.Encrypt(serializedConfig, e3dbClients.MakeSymmetricKey(pkEncKey[:]))
+	meta := ProfileMeta{
+		Enabled:      "enabled",
+		BackupClient: pwConfig,
+		PaperBackup:  pkConfig,
+	}
+
+	accountClientConfig.ClientID = accountResponse.Account.Client.ClientID
+	accountClientConfig.APIKey = accountResponse.Account.Client.APIKeyID
+	accountClientConfig.APISecret = accountResponse.Account.Client.APISecretKey
+	accountClientConfig.SigningKeys = signingKeys
+	accountClientConfig.EncryptionKeys = e3dbClients.EncryptionKeys{
+		Private: e3dbClients.Key{
+			Material: encryptionKeypair.Private.Material,
+			Type:     e3dbClients.DefaultEncryptionKeyType},
+		Public: e3dbClients.Key{
+			Material: encryptionKeypair.Public.Material,
+			Type:     e3dbClients.DefaultEncryptionKeyType},
+	}
+	accountToken := accountResponse.AccountServiceToken
+	account := accountClient.New(accountClientConfig)
+	path := account.Host + "/v1/account/profile/meta"
+	request, err := e3dbClients.CreateRequest("PUT", path, meta)
+	if err != nil {
+		return createResponse, e3dbClients.NewError(err.Error(), path, 0)
+	}
+	err = e3dbClients.MakeProxiedUserCall(context.Background(), accountToken, request, nil)
+	if err != nil {
+		return createResponse, fmt.Errorf("updating profile meta: %v", err)
+	}
+	createResponse.PaperKey = paperKey
+	createResponse.Account = Account{
+		AccountID: accountResponse.Profile.AccountID,
+		Token:     accountToken,
+		Config:    clientConfig,
+		Client:    &account,
+	}
+	return createResponse, nil
 }
