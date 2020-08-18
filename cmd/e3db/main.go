@@ -612,6 +612,7 @@ func main() {
 	options.Logging = app.BoolOpt("d debug", false, "enable debug logging")
 	options.Profile = app.StringOpt("p profile", "", "e3db configuration profile")
 
+	app.Command("signup", "signup for a new account", cmdSignup)
 	app.Command("register", "register a client", cmdRegister)
 	app.Command("info", "get client information", cmdInfo)
 	app.Command("ls", "list records", cmdList)
@@ -681,5 +682,42 @@ func cmdListRealms(cmd *cli.Cmd) {
 		if useJSON {
 			fmt.Println("\n]")
 		}
+	}
+}
+
+func cmdSignup(cmd *cli.Cmd) {
+	accountName := cmd.String(cli.StringArg{
+		Name:      "NAME",
+		Desc:      "Account display name",
+		Value:     "",
+		HideValue: true,
+	})
+	accountEmail := cmd.String(cli.StringArg{
+		Name:      "EMAIL",
+		Desc:      "Account email",
+		Value:     "",
+		HideValue: true,
+	})
+
+	accountPassword := cmd.String(cli.StringArg{
+		Name:      "PASSWORD",
+		Desc:      "Account password",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Spec = "[OPTIONS] [NAME] [EMAIL] [PASSWORD]"
+
+	cmd.Action = func() {
+		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		if err != nil {
+			dieErr(err)
+		}
+		ctx := context.Background()
+		createdAccount, err := sdk.Register(ctx, *accountName, *accountEmail, *accountPassword)
+		if err != nil {
+			dieErr(err)
+		}
+		fmt.Printf("\nCreated Account %+v\n", createdAccount)
 	}
 }
