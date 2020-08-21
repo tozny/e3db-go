@@ -612,7 +612,6 @@ func main() {
 	options.Logging = app.BoolOpt("d debug", false, "enable debug logging")
 	options.Profile = app.StringOpt("p profile", "", "e3db configuration profile")
 
-	app.Command("signup", "signup for a new account", cmdSignup)
 	app.Command("register", "register a client", cmdRegister)
 	app.Command("info", "get client information", cmdInfo)
 	app.Command("ls", "list records", cmdList)
@@ -631,6 +630,8 @@ func main() {
 		cmd.Command("write", "write a small file", cmdWriteFile)
 	})
 	app.Command("lsrealms", "list realms", cmdListRealms)
+	app.Command("signup", "signup for a new account", cmdSignup)
+	app.Command("login", "login to fetch credentials and account token", cmdLogin)
 	app.Run(os.Args)
 }
 
@@ -718,6 +719,50 @@ func cmdSignup(cmd *cli.Cmd) {
 		if err != nil {
 			dieErr(err)
 		}
-		fmt.Printf("\nCreated Account %+v\n", createdAccount)
+		fmt.Printf("Created Account %+v\n", createdAccount)
+	}
+}
+
+func cmdLogin(cmd *cli.Cmd) {
+	accountUsername := cmd.String(cli.StringArg{
+		Name:      "ACCOUNT_EMAIL",
+		Desc:      "Account username",
+		Value:     "",
+		HideValue: true,
+	})
+	accountPassword := cmd.String(cli.StringArg{
+		Name:      "ACCOUNT_PASSWORD",
+		Desc:      "Account password",
+		Value:     "",
+		HideValue: true,
+	})
+
+	loginEndpoint := cmd.String(cli.StringArg{
+		Name:      "ENDPOINT",
+		Desc:      "Endpoint to use for attempting the login password",
+		Value:     "",
+		HideValue: true,
+	})
+
+	loginType := cmd.String(cli.StringArg{
+		Name:      "LOGIN_TYPE",
+		Desc:      "Login type. Valid values are `password` or `paper`",
+		Value:     "password",
+		HideValue: false,
+	})
+
+	cmd.Spec = "[OPTIONS] [ACCOUNT_EMAIL] [ACCOUNT_PASSWORD] [ENDPOINT] [LOGIN_TYPE]"
+
+	cmd.Action = func() {
+		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		if err != nil {
+			dieErr(err)
+		}
+		ctx := context.Background()
+		accountSession, err := sdk.Login(ctx, *accountUsername, *accountPassword, *loginType, *loginEndpoint)
+		if err != nil {
+			dieErr(err)
+		}
+		fmt.Printf("Account Session Token: %+v\n", accountSession.Token)
 	}
 }

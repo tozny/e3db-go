@@ -904,3 +904,124 @@ func (c *ToznySDKV3) Register(ctx context.Context, name string, email string, pa
 	}
 	return createResponse, nil
 }
+
+// Login derives the needed keys and fetches an active account session
+func (c *ToznySDKV3) Login(ctx context.Context, email string, password string, salt string, apiEndpoint string) (Account, error) {
+	var account Account
+	var err error
+	var challenge Challenge
+	apiHost := c.APIEndpoint
+	if apiEndpoint != "" {
+		apiHost = apiEndpoint
+	}
+	body := map[string]string{}
+	body["email"] = email
+	path := apiHost + "/v1/account/challenge"
+	request, err := e3dbClients.CreateRequest("POST", path, body)
+	if err != nil {
+		return account, e3dbClients.NewError(err.Error(), path, 0)
+	}
+	err = e3dbClients.MakePublicCall(ctx, request, &challenge)
+	if err != nil {
+		return account, fmt.Errorf("initiating login challenge: %v", err)
+	}
+	var authSalt []byte
+	if salt != "paper" {
+		authSalt, err = base64.RawURLEncoding.DecodeString(challenge.AuthSalt)
+	} else {
+		authSalt, err = base64.RawURLEncoding.DecodeString(challenge.PaperAuthSalt)
+	}
+	if err != nil {
+		return account, fmt.Errorf("decoding salt: %v", err)
+	}
+	_, privateKey := e3dbClients.DeriveSigningKey([]byte(password), authSalt, e3dbClients.AccountDerivationRounds)
+	challengeBytes, err := base64.RawURLEncoding.DecodeString(challenge.Challenge)
+	if err != nil {
+		return account, fmt.Errorf("decoding signature: %v", err)
+	}
+	// challenge.challenge, sigKeys.privateKey
+	signatureBytes := e3dbClients.Sign(challengeBytes, privateKey)
+	signature := base64.RawURLEncoding.EncodeToString(signatureBytes)
+	body["challenge"] = challenge.Challenge
+	body["response"] = signature
+	if salt != "paper" {
+		body["keyid"] = "password"
+	} else {
+		body["keyid"] = "paper"
+	}
+	path = apiHost + "/v1/account/auth"
+	request, err = e3dbClients.CreateRequest("POST", path, body)
+	if err != nil {
+		return account, e3dbClients.NewError(err.Error(), path, 0)
+	}
+	var authResponse AuthResponse
+	err = e3dbClients.MakePublicCall(ctx, request, &authResponse)
+	if err != nil {
+		return account, fmt.Errorf("error %v initiating login challenge %+v", err, request)
+	}
+	var meta ProfileMeta
+	accountToken := authResponse.Token
+	path = apiHost + "/v1/account/profile/meta"
+	request, err = e3dbClients.CreateRequest("GET", path, nil)
+	if err != nil {
+		return account, e3dbClients.NewError(err.Error(), path, 0)
+	}
+	err = e3dbClients.MakeProxiedUserCall(ctx, accountToken, request, &meta)
+	if err != nil {
+		return account, fmt.Errorf("updating profile meta: %v", err)
+	}
+	var encSalt []byte
+	if salt != "paper" {
+		encSalt, err = base64.RawURLEncoding.DecodeString(authResponse.Profile.EncodingSalt)
+	} else {
+		encSalt, err = base64.RawURLEncoding.DecodeString(authResponse.Profile.PaperEncodingSalt)
+	}
+	if err != nil {
+		return account, fmt.Errorf("decoding salt: %v", err)
+	}
+	encKey := e3dbClients.DeriveSymmetricKey([]byte(password), encSalt, e3dbClients.AccountDerivationRounds)
+	var encCipher string
+	if salt != "paper" {
+		encCipher = meta.BackupClient
+	} else {
+		encCipher = meta.PaperBackup
+	}
+	var clientConfig ClientConfig
+	clientJSON, err := e3dbClients.Decrypt(encCipher, e3dbClients.MakeSymmetricKey(encKey[:]))
+	if err != nil {
+		return account, fmt.Errorf("decrypting client credentials: %v", err)
+	}
+	err = json.Unmarshal(clientJSON, &clientConfig)
+	if err != nil {
+		return account, fmt.Errorf("decoding client credentials: %v", err)
+	}
+
+	var accountClientConfig = e3dbClients.ClientConfig{
+		Host:      apiHost,
+		AuthNHost: apiHost,
+		ClientID:  clientConfig.ClientID,
+		APIKey:    clientConfig.APIKeyID,
+		APISecret: clientConfig.APISecret,
+		SigningKeys: e3dbClients.SigningKeys{
+			Private: e3dbClients.Key{
+				Material: clientConfig.PrivateSigningKey,
+				Type:     e3dbClients.DefaultSigningKeyType},
+			Public: e3dbClients.Key{
+				Material: clientConfig.PublicSigningKey,
+				Type:     e3dbClients.DefaultSigningKeyType},
+		},
+		EncryptionKeys: e3dbClients.EncryptionKeys{
+			Private: e3dbClients.Key{
+				Material: clientConfig.PrivateKey,
+				Type:     e3dbClients.DefaultEncryptionKeyType},
+			Public: e3dbClients.Key{
+				Material: clientConfig.PublicKey,
+				Type:     e3dbClients.DefaultEncryptionKeyType},
+		},
+	}
+	mainClient := accountClient.New(accountClientConfig)
+	account.Client = &mainClient
+	account.Token = accountToken
+	account.Config = clientConfig
+	return account, nil
+}

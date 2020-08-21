@@ -18,6 +18,10 @@ lint:
 build:
 	go build -o ${BINARY} ./cmd/${BINARY}
 
+# Target for building and moving the binary to the local system execution path
+install:
+	go install ./cmd/${BINARY}
+
 # target for tagging and publishing a new version of the SDK
 # run like make version=X.Y.Z
 version:
