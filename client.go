@@ -725,9 +725,10 @@ type RegisterAccountResponse struct {
 // Account wraps the data needed to make TozStore account calls
 type Account struct {
 	AccountID string
-	Token     string
-	Config    ClientConfig
-	Client    *accountClient.E3dbAccountClient
+	// JWT that can be used for later requests against the account service.
+	Token  string
+	Config ClientConfig
+	Client *accountClient.E3dbAccountClient
 }
 
 // Challenge wraps the parameters needed to initiate and account login
