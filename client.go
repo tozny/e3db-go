@@ -37,6 +37,9 @@ import (
 	"github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/identityClient"
+	"github.com/tozny/e3db-clients-go/pdsClient"
+	"github.com/tozny/e3db-clients-go/storageClient"
+
 	"golang.org/x/oauth2/clientcredentials"
 )
 
@@ -645,6 +648,8 @@ type ToznySDKV3 struct {
 	// e.g. toznySDK.CreateAccount(ctx context.Context, params accountClient.CreateAccountRequest)
 	*accountClient.E3dbAccountClient
 	*identityClient.E3dbIdentityClient
+	*storageClient.StorageClient
+	*pdsClient.E3dbPDSClient
 	// Account public authentication material for creating and deriving account credentials
 	AccountUsername string
 	// Account private authentication material for creating and deriving account credentials
@@ -666,9 +671,14 @@ type ToznySDKConfig struct {
 func NewToznySDKV3(config ToznySDKConfig) (*ToznySDKV3, error) {
 	accountServiceClient := accountClient.New(config.ClientConfig)
 	identityClient := identityClient.New(config.ClientConfig)
+	storageClient := storageClient.New(config.ClientConfig)
+	pdsClient := pdsClient.New(config.ClientConfig)
+
 	return &ToznySDKV3{
 		E3dbAccountClient:  &accountServiceClient,
 		E3dbIdentityClient: &identityClient,
+		StorageClient:      &storageClient,
+		E3dbPDSClient:      &pdsClient,
 		AccountUsername:    config.AccountUsername,
 		AccountPassword:    config.AccountPassword,
 		APIEndpoint:        config.APIEndpoint,
@@ -1025,4 +1035,94 @@ func (c *ToznySDKV3) Login(ctx context.Context, email string, password string, s
 	account.Token = accountToken
 	account.Config = clientConfig
 	return account, nil
+}
+
+// ConvertBrokerIdentityToClientConfig converts a broker identity to raw Tozny client credentials.
+func ConvertBrokerIdentityToClientConfig(broker identityClient.Identity, clientURL string) ClientConfig {
+	return ClientConfig{
+		APIKeyID:          broker.APIKeyID,
+		APISecret:         broker.APIKeySecret,
+		APIURL:            clientURL,
+		ClientEmail:       "",
+		ClientID:          broker.ToznyID.String(),
+		PrivateKey:        broker.PrivateEncryptionKeys[e3dbClients.DefaultEncryptionKeyType],
+		PrivateSigningKey: broker.PrivateSigningKeys[e3dbClients.DefaultSigningKeyType],
+		PublicKey:         broker.PublicKeys[e3dbClients.DefaultEncryptionKeyType],
+		PublicSigningKey:  broker.SigningKeys[e3dbClients.DefaultSigningKeyType],
+		Version:           2,
+	}
+}
+
+type NoteBody map[string]string
+
+// GenerateRealmBrokerNoteToken writes a note with the broker identity credentials
+// and returns a token that can be used to fetch and decrypt
+// the note with the broker identity client or error (if any).
+func (c *ToznySDKV3) GenerateRealmBrokerNoteToken(ctx context.Context, broker identityClient.Identity) (string, error) {
+	serializedBrokerCredentialsBytes, err := json.Marshal(ConvertBrokerIdentityToClientConfig(broker, c.APIEndpoint))
+
+	if err != nil {
+		return "", err
+	}
+
+	notePassword := e3dbClients.RandomSymmetricKey()
+
+	encodingNonce := e3dbClients.RandomNonce()
+
+	signingNone := e3dbClients.RandomNonce()
+
+	tokenSeed := e3dbClients.Base64Encode(notePassword[:]) + e3dbClients.Base64Encode(encodingNonce[:]) + e3dbClients.Base64Encode(signingNone[:])
+
+	publicEncryptionKey, privateEncryptionKey := e3dbClients.DeriveCryptoKey(notePassword[:], encodingNonce[:], e3dbClients.AccountDerivationRounds)
+
+	publicSigningKey, _ := e3dbClients.DeriveSigningKey(notePassword[:], signingNone[:], e3dbClients.AccountDerivationRounds)
+
+	noteBody := NoteBody{
+		"realmId":   fmt.Sprintf("%d", broker.RealmID),
+		"realmName": broker.RealmName,
+		"client":    string(serializedBrokerCredentialsBytes),
+		"publicKey": e3dbClients.Base64Encode(publicEncryptionKey[:]),
+	}
+
+	accessKey := e3dbClients.RandomSymmetricKey()
+
+	encryptedAccessKey, err := e3dbClients.EncryptAccessKey(accessKey, e3dbClients.EncryptionKeys{
+		Private: e3dbClients.Key{
+			Type:     e3dbClients.DefaultEncryptionKeyType,
+			Material: e3dbClients.Base64Encode(publicEncryptionKey[:]),
+		},
+		Public: e3dbClients.Key{
+			Type:     e3dbClients.DefaultEncryptionKeyType,
+			Material: e3dbClients.Base64Encode(privateEncryptionKey[:]),
+		},
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	encryptedData := e3dbClients.EncryptData(noteBody, accessKey)
+
+	noteToWrite := storageClient.Note{
+		Mode:                e3dbClients.DefaultCryptographicMode,
+		RecipientSigningKey: e3dbClients.Base64Encode(publicSigningKey[:]),
+		WriterSigningKey:    c.StorageClient.SigningKeys.Public.Material,
+		WriterEncryptionKey: c.StorageClient.EncryptionKeys.Public.Material,
+		EncryptedAccessKey:  encryptedAccessKey,
+		Type:                "Realm Broker Note",
+		Data:                *encryptedData,
+		Signature:           "unsigned",
+		MaxViews:            -1,
+		Expires:             false,
+	}
+
+	note, err := c.WriteNote(ctx, noteToWrite)
+
+	if err != nil {
+		return "", err
+	}
+
+	brokerNoteToken := tokenSeed + note.NoteID
+
+	return brokerNoteToken, err
 }
