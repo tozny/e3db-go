@@ -926,7 +926,7 @@ func (c *ToznySDKV3) Login(ctx context.Context, email string, password string, s
 		apiHost = apiEndpoint
 	}
 	body := map[string]string{}
-	body["email"] = email
+	body["email"] = strings.ToLower(email)
 	path := apiHost + "/v1/account/challenge"
 	request, err := e3dbClients.CreateRequest("POST", path, body)
 	if err != nil {
