@@ -217,10 +217,17 @@ func cmdWrite(cmd *cli.Cmd) {
 		HideValue: true,
 	})
 
+	meta := cmd.String(cli.StringOpt{
+		Name:      "META",
+		Desc:      "json UNENCRYPTED record metadata for search or @FILENAME",
+		Value:     "",
+		HideValue: true,
+	})
+
 	cmd.Action = func() {
 		client := options.getClient()
 		var recordData string
-
+		// Read record data
 		dataRunes := []rune(*data)
 		if dataRunes[0] == '@' {
 			b, err := ioutil.ReadFile(string(dataRunes[1:]))
@@ -232,15 +239,31 @@ func cmdWrite(cmd *cli.Cmd) {
 		} else {
 			recordData = *data
 		}
-
 		jsonData := make(map[string]string)
-
 		err := json.NewDecoder(strings.NewReader(recordData)).Decode(&jsonData)
 		if err != nil {
 			dieErr(err)
 		}
+		// Read record meta meta search able tags
+		var recordMeta string
+		metaRunes := []rune(*meta)
+		jsonMetaData := make(map[string]string)
+		if len(metaRunes) > 0 {
+			if metaRunes[0] == '@' {
+				b, err := ioutil.ReadFile(string(metaRunes[1:]))
+				if err != nil {
+					dieErr(err)
+				}
 
-		record, err := client.Write(context.Background(), *recordType, jsonData, nil)
+				recordMeta = string(b)
+			} else {
+				recordMeta = *meta
+			}
+
+			err = json.NewDecoder(strings.NewReader(recordMeta)).Decode(&jsonMetaData)
+		}
+		// Write the record to TozStore
+		record, err := client.Write(context.Background(), *recordType, jsonData, jsonMetaData)
 		if err != nil {
 			dieErr(err)
 		}
