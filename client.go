@@ -656,6 +656,8 @@ type ToznySDKV3 struct {
 	AccountPassword string
 	// Network location of the Tozny services to communicate with.
 	APIEndpoint string
+	// Tozny server defined globally unique id for this Client.
+	ClientID string
 }
 
 // ToznySDKConfig wraps parameters needed to configure a ToznySDK
@@ -682,6 +684,7 @@ func NewToznySDKV3(config ToznySDKConfig) (*ToznySDKV3, error) {
 		AccountUsername:    config.AccountUsername,
 		AccountPassword:    config.AccountPassword,
 		APIEndpoint:        config.APIEndpoint,
+		ClientID:           config.ClientID,
 	}, nil
 }
 
@@ -1125,4 +1128,37 @@ func (c *ToznySDKV3) GenerateRealmBrokerNoteToken(ctx context.Context, broker id
 	brokerNoteToken := tokenSeed + note.NoteID
 
 	return brokerNoteToken, err
+}
+
+// AddAuthorizedSharer adds the specified client as an authorized sharer
+// for records of the specified type written by the authorizing client,
+// returning error (if any).
+func (c *ToznySDKV3) AddAuthorizedSharer(ctx context.Context, authorizedSharerClientID string, recordType string) error {
+	_, err := c.GetOrCreateAccessKey(ctx, pdsClient.GetOrCreateAccessKeyRequest{
+		WriterID:   c.ClientID,
+		UserID:     c.ClientID,
+		ReaderID:   authorizedSharerClientID,
+		RecordType: recordType,
+	})
+	if err != nil {
+		return err
+	}
+	return c.E3dbPDSClient.AddAuthorizedSharer(ctx, pdsClient.AddAuthorizedWriterRequest{
+		UserID:       c.ClientID,
+		WriterID:     c.ClientID,
+		AuthorizerID: authorizedSharerClientID,
+		RecordType:   recordType,
+	})
+}
+
+// RemoveAuthorizedSharer removes the specified client as an authorized sharer
+// for records of the specified type written by the authorizing client,
+// returning error (if any).
+func (c *ToznySDKV3) RemoveAuthorizedSharer(ctx context.Context, authorizedSharerClientID string, recordType string) error {
+	return c.E3dbPDSClient.RemoveAuthorizedSharer(ctx, pdsClient.AddAuthorizedWriterRequest{
+		UserID:       c.ClientID,
+		WriterID:     c.ClientID,
+		AuthorizerID: authorizedSharerClientID,
+		RecordType:   recordType,
+	})
 }
