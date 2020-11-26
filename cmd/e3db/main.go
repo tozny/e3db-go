@@ -643,6 +643,8 @@ func main() {
 	app.Command("delete", "delete a record", cmdDelete)
 	app.Command("share", "share records with another client", cmdShare)
 	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
+	app.Command("authorize", "authorize another client to share records. on behalf of this client", cmdAuthorizeSharer)
+	app.Command("deauthorize", "deauthoize another client to share records on behalf of this client", cmdDeauthorizeSharer)
 	app.Command("policy", "operations on sharing policy", func(cmd *cli.Cmd) {
 		cmd.Command("incoming", "list incoming sharing policy (who shares with me?)", cmdPolicyIncoming)
 		cmd.Command("outgoing", "list outgoing sharing policy (who have I shared with?)", cmdPolicyOutgoing)
@@ -787,5 +789,67 @@ func cmdLogin(cmd *cli.Cmd) {
 			dieErr(err)
 		}
 		fmt.Printf("Account Session Token: %+v\n", accountSession.Token)
+	}
+}
+
+func cmdAuthorizeSharer(cmd *cli.Cmd) {
+	recordType := cmd.String(cli.StringArg{
+		Name:      "TYPE",
+		Desc:      "type of records to authorize another client to share on behalf of the authorizing client.",
+		Value:     "",
+		HideValue: true,
+	})
+
+	clientID := cmd.String(cli.StringArg{
+		Name:      "CLIENT_ID",
+		Desc:      "client unique id or email",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		if err != nil {
+			dieErr(err)
+		}
+
+		ctx := context.Background()
+		err = sdk.AddAuthorizedSharer(ctx, *clientID, *recordType)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Printf("Records of type '%s' are now authorized to be shared by client '%s'\n", *recordType, *clientID)
+	}
+}
+
+func cmdDeauthorizeSharer(cmd *cli.Cmd) {
+	recordType := cmd.String(cli.StringArg{
+		Name:      "TYPE",
+		Desc:      "type of records to de-authorize another client to share on behalf of the authorizing client.",
+		Value:     "",
+		HideValue: true,
+	})
+
+	clientID := cmd.String(cli.StringArg{
+		Name:      "CLIENT_ID",
+		Desc:      "client unique id or email",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		if err != nil {
+			dieErr(err)
+		}
+
+		ctx := context.Background()
+		err = sdk.RemoveAuthorizedSharer(ctx, *clientID, *recordType)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Printf("Records of type '%s' are now de-authorized to be shared by client '%s'\n", *recordType, *clientID)
 	}
 }
