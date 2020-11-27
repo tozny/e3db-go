@@ -117,6 +117,10 @@ func doQuery(client *e3db.Client, useJSON bool, q *e3db.Q) {
 	}
 
 	if useJSON {
+		if first {
+			first = false
+			fmt.Println("[")
+		}
 		fmt.Println("\n]")
 	}
 }
@@ -627,39 +631,6 @@ func cmdRegister(cmd *cli.Cmd) {
 	}
 }
 
-func main() {
-	app := cli.App("e3db-cli", "E3DB Command Line Interface")
-
-	app.Version("v version", "e3db-cli 2.1.1")
-
-	options.Logging = app.BoolOpt("d debug", false, "enable debug logging")
-	options.Profile = app.StringOpt("p profile", "", "e3db configuration profile")
-
-	app.Command("register", "register a client", cmdRegister)
-	app.Command("info", "get client information", cmdInfo)
-	app.Command("ls", "list records", cmdList)
-	app.Command("write", "write a record", cmdWrite)
-	app.Command("read", "read records by ID", cmdRead)
-	app.Command("delete", "delete a record", cmdDelete)
-	app.Command("share", "share records with another client", cmdShare)
-	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
-	app.Command("authorize", "authorize another client to share records. on behalf of this client", cmdAuthorizeSharer)
-	app.Command("deauthorize", "deauthoize another client to share records on behalf of this client", cmdDeauthorizeSharer)
-	app.Command("policy", "operations on sharing policy", func(cmd *cli.Cmd) {
-		cmd.Command("incoming", "list incoming sharing policy (who shares with me?)", cmdPolicyIncoming)
-		cmd.Command("outgoing", "list outgoing sharing policy (who have I shared with?)", cmdPolicyOutgoing)
-	})
-	app.Command("feedback", "provde e3db feedback to Tozny", cmdFeedback)
-	app.Command("file", "work with small files", func(cmd *cli.Cmd) {
-		cmd.Command("read", "read a small file", cmdReadFile)
-		cmd.Command("write", "write a small file", cmdWriteFile)
-	})
-	app.Command("lsrealms", "list realms", cmdListRealms)
-	app.Command("signup", "signup for a new account", cmdSignup)
-	app.Command("login", "login to fetch credentials and account token", cmdLogin)
-	app.Run(os.Args)
-}
-
 /**
 SDK V3 prototyping below.
 Not for external production use.
@@ -802,7 +773,7 @@ func cmdAuthorizeSharer(cmd *cli.Cmd) {
 
 	clientID := cmd.String(cli.StringArg{
 		Name:      "CLIENT_ID",
-		Desc:      "client unique id or email",
+		Desc:      "client id to authorize for sharing the specific record type",
 		Value:     "",
 		HideValue: true,
 	})
@@ -833,7 +804,7 @@ func cmdDeauthorizeSharer(cmd *cli.Cmd) {
 
 	clientID := cmd.String(cli.StringArg{
 		Name:      "CLIENT_ID",
-		Desc:      "client unique id or email",
+		Desc:      "client id to deauthorize for sharing the specific record type",
 		Value:     "",
 		HideValue: true,
 	})
@@ -852,4 +823,115 @@ func cmdDeauthorizeSharer(cmd *cli.Cmd) {
 
 		fmt.Printf("Records of type '%s' are now de-authorized to be shared by client '%s'\n", *recordType, *clientID)
 	}
+}
+
+func cmdBrokerShare(cmd *cli.Cmd) {
+	recordType := cmd.String(cli.StringArg{
+		Name:      "TYPE",
+		Desc:      "type of records to share from one client to another client",
+		Value:     "",
+		HideValue: true,
+	})
+
+	authorizerID := cmd.String(cli.StringArg{
+		Name:      "AUTHORIZER_ID",
+		Desc:      "client id to authorize for sharing records",
+		Value:     "",
+		HideValue: true,
+	})
+
+	readerID := cmd.String(cli.StringArg{
+		Name:      "READER_ID",
+		Desc:      "client id to authorize for sharing records",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		if err != nil {
+			dieErr(err)
+		}
+
+		ctx := context.Background()
+		err = sdk.BrokerShare(ctx, *authorizerID, *readerID, *recordType)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Printf("Records of type '%s' from client '%s' are now shared with client '%s'\n", *recordType, *authorizerID, *readerID)
+	}
+}
+
+func cmdUnbrokerShare(cmd *cli.Cmd) {
+	recordType := cmd.String(cli.StringArg{
+		Name:      "TYPE",
+		Desc:      "type of records to unshare from one client to another client",
+		Value:     "",
+		HideValue: true,
+	})
+
+	authorizerID := cmd.String(cli.StringArg{
+		Name:      "AUTHORIZER_ID",
+		Desc:      "client id to authorize for sharing records",
+		Value:     "",
+		HideValue: true,
+	})
+
+	readerID := cmd.String(cli.StringArg{
+		Name:      "READER_ID",
+		Desc:      "client id to authorize for sharing records",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Action = func() {
+		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		if err != nil {
+			dieErr(err)
+		}
+
+		ctx := context.Background()
+		err = sdk.UnbrokerShare(ctx, *authorizerID, *readerID, *recordType)
+		if err != nil {
+			dieErr(err)
+		}
+
+		fmt.Printf("Records of type '%s' from client '%s' are now unshared with client '%s'\n", *recordType, *authorizerID, *readerID)
+	}
+}
+
+func main() {
+	app := cli.App("e3db-cli", "E3DB Command Line Interface")
+
+	app.Version("v version", "e3db-cli 2.1.1")
+
+	options.Logging = app.BoolOpt("d debug", false, "enable debug logging")
+	options.Profile = app.StringOpt("p profile", "", "e3db configuration profile")
+
+	app.Command("register", "register a client", cmdRegister)
+	app.Command("info", "get client information", cmdInfo)
+	app.Command("ls", "list records", cmdList)
+	app.Command("write", "write a record", cmdWrite)
+	app.Command("read", "read records by ID", cmdRead)
+	app.Command("delete", "delete a record", cmdDelete)
+	app.Command("share", "share records with another client", cmdShare)
+	app.Command("unshare", "stop sharing records with another client", cmdUnshare)
+	app.Command("authorize", "authorize another client to share records. on behalf of this client", cmdAuthorizeSharer)
+	app.Command("deauthorize", "deauthoize another client to share records on behalf of this client", cmdDeauthorizeSharer)
+	app.Command("broker", "share records belonging to another client with a third party", cmdBrokerShare)
+	app.Command("unbroker", "stop sharing records belonging to another client with a third party", cmdUnbrokerShare)
+	app.Command("policy", "operations on sharing policy", func(cmd *cli.Cmd) {
+		cmd.Command("incoming", "list incoming sharing policy (who shares with me?)", cmdPolicyIncoming)
+		cmd.Command("outgoing", "list outgoing sharing policy (who have I shared with?)", cmdPolicyOutgoing)
+	})
+	app.Command("feedback", "provde e3db feedback to Tozny", cmdFeedback)
+	app.Command("file", "work with small files", func(cmd *cli.Cmd) {
+		cmd.Command("read", "read a small file", cmdReadFile)
+		cmd.Command("write", "write a small file", cmdWriteFile)
+	})
+	app.Command("lsrealms", "list realms", cmdListRealms)
+	app.Command("signup", "signup for a new account", cmdSignup)
+	app.Command("login", "login to fetch credentials and account token", cmdLogin)
+	app.Run(os.Args)
 }

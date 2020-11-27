@@ -1137,7 +1137,7 @@ func (c *ToznySDKV3) AddAuthorizedSharer(ctx context.Context, authorizedSharerCl
 	_, err := c.GetOrCreateAccessKey(ctx, pdsClient.GetOrCreateAccessKeyRequest{
 		WriterID:   c.ClientID,
 		UserID:     c.ClientID,
-		ReaderID:   authorizedSharerClientID,
+		ReaderID:   c.ClientID,
 		RecordType: recordType,
 	})
 	if err != nil {
@@ -1159,6 +1159,32 @@ func (c *ToznySDKV3) RemoveAuthorizedSharer(ctx context.Context, authorizedShare
 		UserID:       c.ClientID,
 		WriterID:     c.ClientID,
 		AuthorizerID: authorizedSharerClientID,
+		RecordType:   recordType,
+	})
+}
+
+// AddAuthorizedSharer adds the specified client as an authorized sharer
+// for records of the specified type written by the authorizing client,
+// returning error (if any).
+func (c *ToznySDKV3) BrokerShare(ctx context.Context, authorizerClientID string, readerClientID string, recordType string) error {
+	return c.AuthorizerShareRecords(ctx, pdsClient.AuthorizerShareRecordsRequest{
+		UserID:       authorizerClientID,
+		WriterID:     authorizerClientID,
+		AuthorizerID: c.ClientID,
+		ReaderID:     readerClientID,
+		RecordType:   recordType,
+	})
+}
+
+// RemoveAuthorizedSharer removes the specified client as an authorized sharer
+// for records of the specified type written by the authorizing client,
+// returning error (if any).
+func (c *ToznySDKV3) UnbrokerShare(ctx context.Context, authorizerClientID string, readerClientID string, recordType string) error {
+	return c.AuthorizerUnshareRecords(ctx, pdsClient.AuthorizerUnshareRecordsRequest{
+		UserID:       authorizerClientID,
+		WriterID:     authorizerClientID,
+		AuthorizerID: c.ClientID,
+		ReaderID:     readerClientID,
 		RecordType:   recordType,
 	})
 }
