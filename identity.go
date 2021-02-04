@@ -38,7 +38,7 @@ type realmInfo struct {
 	Domain string
 }
 
-type identityData struct {
+type IdentityData struct {
 	RealmName       string `json:"realm_name"`
 	RealmDomain     string `json:"realm_domain"`
 	AppName         string `json:"app_name"`
@@ -448,7 +448,7 @@ func (i *Identity) Serialize() (serializedIdentity, error) {
 	if err != nil {
 		return serialized, err
 	}
-	config := identityData{
+	config := IdentityData{
 		RealmName:       i.Realm.Name,
 		RealmDomain:     info.Domain,
 		AppName:         i.Realm.App,
