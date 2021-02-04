@@ -233,7 +233,7 @@ func (i *Identity) writeBrokerNotes(email string) ([]*storageClient.Note, error)
 	// Fetch the public broker info
 	brokerInfo, err := i.ClientInfo(context.Background(), realmInfo.BrokerIdentityToznyID.String())
 	if brokerInfo == nil {
-		err = fmt.Errorf("Broker info not found for realm", realmInfo.Name)
+		err = fmt.Errorf("Broker info not found for realm %q", realmInfo.Name)
 	}
 	if err != nil {
 		return []*storageClient.Note{}, err
