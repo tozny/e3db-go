@@ -12,3 +12,5 @@ require (
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	google.golang.org/appengine v1.6.6 // indirect
 )
+
+replace github.com/tozny/e3db-clients-go => /Users/lkwdwrd/Documents/Projects/Tozny/e3db-clients-go

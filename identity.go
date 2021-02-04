@@ -106,49 +106,6 @@ func (r *Realm) Register(username, password, registrationToken, email, firstName
 	if err != nil {
 		return identity, err
 	}
-	// encryptionKeyPair := e3dbClients.EncryptionKeys{
-	// 	Public: e3dbClients.Key{
-	// 		Material: "pf-JxAjkNq5nJvGAR6fFSPKcfBft4woIi_Ncdob-5gw",
-	// 		Type:     e3dbClients.DefaultEncryptionKeyType,
-	// 	},
-	// 	Private: e3dbClients.Key{
-	// 		Material: "Ne24vj8isUkS-66SmUZALq2QTEmS-D1XthxuHVEyLzM",
-	// 		Type:     e3dbClients.DefaultEncryptionKeyType,
-	// 	},
-	// }
-	// signingKeyPair := e3dbClients.SigningKeys{
-	// 	Public: e3dbClients.Key{
-	// 		Material: "h3ilD6xIhR8wlYi6f_osNeptDpVhCcke6_mIlEVmILw",
-	// 		Type:     e3dbClients.DefaultSigningKeyType,
-	// 	},
-	// 	Private: e3dbClients.Key{
-	// 		Material: "4m7rRGY32lW_kX4tUa9W6Ji-anisC-N4Dueb515X5ECHeKUPrEiFHzCViLp_-iw16m0OlWEJyR7r-YiURWYgvA",
-	// 		Type:     e3dbClients.DefaultSigningKeyType,
-	// 	},
-	// }
-	// var registration identityClient.RegisterIdentityResponse
-	// regJSON := `{
-	//     "identity": {
-	//       "id": 184,
-	//       "tozny_id": "ff0c9f13-9065-4713-8668-060e0e4b6295",
-	//       "realm_id": 143,
-	//       "realm_name": "80L13eQ8",
-	//       "name": "machine3",
-	//       "first_name": "",
-	//       "last_name": "",
-	//       "email": "",
-	//       "api_key_id": "9a050782ba987c637a873a92085a2baa38ff9ade6cd0a2ad59226650dfed15a2",
-	//       "api_secret_key": "4c79e2f7888d9067b06441c128327168e6670d875f3312dbf1646391f99baf72",
-	//       "public_key": {
-	//         "curve25519": "pf-JxAjkNq5nJvGAR6fFSPKcfBft4woIi_Ncdob-5gw"
-	//       },
-	//       "signing_key": {
-	//         "ed25519": "h3ilD6xIhR8wlYi6f_osNeptDpVhCcke6_mIlEVmILw"
-	//       }
-	//     },
-	//     "realm_broker_identity_tozny_id": "1230a181-230f-4cb6-92f7-874a3fdab792"
-	//   }`
-	// json.Unmarshal([]byte(regJSON), &registration)
 
 	storageClient, err := NewToznySDKV3(ToznySDKConfig{
 		ClientConfig: e3dbClients.ClientConfig{
@@ -388,9 +345,6 @@ func (i *Identity) writeCredentialNote(noteName string, encryptionKeyPair *e3dbC
 		return &storageClient.Note{}, err
 	}
 	accessKey := e3dbClients.RandomSymmetricKey()
-	// akBytes, _ := e3dbClients.Base64Decode("Hky7aZunQwz_4PoRNLf7TBI2qP19NqeIIToALjAQMD0")
-	// accessKey := e3dbClients.SymmetricKey(&[e3dbClients.SymmetricKeySize]byte{})
-	// copy(accessKey[:], akBytes)
 	encryptedAccessKey, err := e3dbClients.EncryptAccessKey(accessKey, e3dbClients.EncryptionKeys{
 		Private: e3dbClients.Key{
 			Type:     e3dbClients.DefaultEncryptionKeyType,
@@ -409,8 +363,6 @@ func (i *Identity) writeCredentialNote(noteName string, encryptionKeyPair *e3dbC
 	encryptedNoteBody := e3dbClients.EncryptData(signedNote.Data, accessKey)
 	signedNote.Data = *encryptedNoteBody
 	signedNote.EncryptedAccessKey = encryptedAccessKey
-	// jsonNote, _ := json.Marshal(signedNote)
-	// return &storageClient.Note{}, fmt.Errorf("%s", jsonNote)
 	// Write the credential note
 	credentialNote, err := i.WriteNote(context.Background(), signedNote)
 	if err != nil {
