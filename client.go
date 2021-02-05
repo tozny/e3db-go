@@ -1134,7 +1134,7 @@ func (c *ToznySDKV3) GenerateRealmBrokerNoteToken(ctx context.Context, broker id
 	}
 	// Encrypt the signed note and add the encrypted version of the access
 	// key to the note for the reader to be able to decrypt the note
-	encryptedNoteBody := e3dbClients.EncryptData(rawNoteBody, accessKey)
+	encryptedNoteBody := e3dbClients.EncryptData(signedNote.Data, accessKey)
 	signedNote.Data = *encryptedNoteBody
 	signedNote.EncryptedAccessKey = encryptedAccessKey
 	// Write the broker note
