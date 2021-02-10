@@ -607,7 +607,7 @@ func cmdRegister(cmd *cli.Cmd) {
 
 		publicKey := base64.RawURLEncoding.EncodeToString(pub[:])
 
-		details, err := e3db.RegisterClient(*token, *email, publicKey, "", false, *apiBaseURL)
+		details, apiURL, err := e3db.RegisterClient(*token, *email, publicKey, "", false, *apiBaseURL)
 
 		if err != nil {
 			dieErr(err)
@@ -620,7 +620,7 @@ func cmdRegister(cmd *cli.Cmd) {
 			APISecret:   details.ApiSecret,
 			PublicKey:   pub,
 			PrivateKey:  priv,
-			APIBaseURL:  *apiBaseURL,
+			APIBaseURL:  apiURL,
 			Logging:     false,
 		}
 
@@ -683,6 +683,12 @@ func cmdListRealms(cmd *cli.Cmd) {
 }
 
 func cmdSignup(cmd *cli.Cmd) {
+	apiBaseURL := cmd.String(cli.StringOpt{
+		Name:      "api",
+		Desc:      "e3db api base url",
+		Value:     "",
+		HideValue: true,
+	})
 	accountName := cmd.String(cli.StringArg{
 		Name:      "NAME",
 		Desc:      "Account display name",
@@ -706,16 +712,28 @@ func cmdSignup(cmd *cli.Cmd) {
 	cmd.Spec = "[OPTIONS] [NAME] [EMAIL] [PASSWORD]"
 
 	cmd.Action = func() {
-		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
-		if err != nil {
-			dieErr(err)
-		}
+		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
-		createdAccount, err := sdk.Register(ctx, *accountName, *accountEmail, *accountPassword)
+		createdAccount, err := sdk.Register(ctx, *accountName, *accountEmail, *accountPassword, *apiBaseURL)
 		if err != nil {
 			dieErr(err)
 		}
-		fmt.Printf("Created Account %+v\n", createdAccount)
+		accountClientConfig := createdAccount.Account.Config
+		accountClientInfo := &e3db.ClientOpts{
+			ClientID:    accountClientConfig.ClientID,
+			ClientEmail: accountClientConfig.ClientEmail,
+			APIKeyID:    accountClientConfig.APIKeyID,
+			APISecret:   accountClientConfig.APISecret,
+			PublicKey:   e3db.MakePublicKey([]byte(accountClientConfig.PublicKey)),
+			PrivateKey:  e3db.MakePrivateKey([]byte(accountClientConfig.PrivateKey)),
+			APIBaseURL:  accountClientConfig.APIURL,
+			Logging:     false,
+		}
+
+		err = e3db.SaveConfig(*options.Profile, accountClientInfo)
+		if err != nil {
+			dieErr(err)
+		}
 	}
 }
 

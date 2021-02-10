@@ -56,7 +56,7 @@ func ExampleRegisterClient() {
 
 	// Passing all of the data above into the registration routine will create
 	// a new client with the system. Remember to keep your private key private!
-	client_info, err := e3db.RegisterClient(token, client_name, public_key, "", false, "https://api.e3db.com")
+	client_info, _, err := e3db.RegisterClient(token, client_name, public_key, "", false, "https://api.e3db.com")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Unhandled error: %s\n", err)
 		log.Fatal(err)
@@ -70,7 +70,7 @@ func ExampleRegisterClient() {
 	//
 	// Client credentials are not backed up by default.
 
-	// client_info := e3db.RegisterClient(token, client_name, public_key, private_key, true, "https://api.e3db.com")
+	// client_info, _, err := e3db.RegisterClient(token, client_name, public_key, private_key, true, "https://api.e3db.com")
 	// if err != nil {
 	//   fmt.Fprintf(os.Stderr, "Unhandled error: %s\n", err)
 	//   log.Fatal(err)

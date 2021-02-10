@@ -151,7 +151,7 @@ func GetClient(opts ClientOpts) (*Client, error) {
 }
 
 // RegisterClient creates a new client for a given InnoVault account
-func RegisterClient(registrationToken string, clientName string, publicKey string, privateKey string, backup bool, apiURL string) (*ClientDetails, error) {
+func RegisterClient(registrationToken string, clientName string, publicKey string, privateKey string, backup bool, apiURL string) (*ClientDetails, string, error) {
 	if apiURL == "" {
 		apiURL = defaultStorageURL
 	}
@@ -169,14 +169,14 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/account/e3db/clients/register", apiURL), buf)
 
 	if err != nil {
-		return nil, err
+		return nil, apiURL, err
 	}
 
 	client := &http.Client{}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, apiURL, err
 	}
 
 	defer closeResp(resp)
@@ -184,14 +184,14 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 	var details *ClientDetails
 	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
 		closeResp(resp)
-		return nil, err
+		return nil, apiURL, err
 	}
 
 	backupClient := resp.Header.Get("X-Backup-Client")
 
 	if backup {
 		if privateKey == "" {
-			return nil, errors.New("Cannot back up client credentials without a private key!")
+			return nil, apiURL, errors.New("Cannot back up client credentials without a private key!")
 		}
 
 		pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey)
@@ -211,13 +211,13 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 		client, err := GetClient(*config)
 		if err != nil {
 			closeResp(resp)
-			return nil, err
+			return nil, apiURL, err
 		}
 
 		client.Backup(context.Background(), backupClient, registrationToken)
 	}
 
-	return details, nil
+	return details, apiURL, nil
 }
 
 func (c *Client) apiURL() string {
@@ -782,7 +782,10 @@ type ClientConfig struct {
 }
 
 // Register attempts to create a valid TozStore account returning the root client config for the created account and error (if any).
-func (c *ToznySDKV3) Register(ctx context.Context, name string, email string, password string) (RegisterAccountResponse, error) {
+func (c *ToznySDKV3) Register(ctx context.Context, name string, email string, password string, apiURL string) (RegisterAccountResponse, error) {
+	if apiURL == "" {
+		apiURL = defaultStorageURL
+	}
 	const (
 		pwEncSalt  = "pwEncSalt"
 		pwAuthSalt = "pwAuthSalt"
@@ -791,14 +794,14 @@ func (c *ToznySDKV3) Register(ctx context.Context, name string, email string, pa
 	)
 	// Boot client
 	bootClientConfig := e3dbClients.ClientConfig{
-		Host:      c.APIEndpoint,
-		AuthNHost: c.APIEndpoint,
+		Host:      apiURL,
+		AuthNHost: apiURL,
 	}
 	bootClient := accountClient.New(bootClientConfig)
 	var createResponse RegisterAccountResponse
 	var accountClientConfig = e3dbClients.ClientConfig{
-		Host:      c.APIEndpoint,
-		AuthNHost: c.APIEndpoint,
+		Host:      apiURL,
+		AuthNHost: apiURL,
 	}
 	var accountResponse *accountClient.CreateAccountResponse
 
@@ -866,7 +869,7 @@ func (c *ToznySDKV3) Register(ctx context.Context, name string, email string, pa
 	}
 	clientConfig := ClientConfig{
 		Version:           2,
-		APIURL:            c.APIEndpoint,
+		APIURL:            apiURL,
 		ClientID:          accountResponse.Account.Client.ClientID,
 		APIKeyID:          accountResponse.Account.Client.APIKeyID,
 		APISecret:         accountResponse.Account.Client.APISecretKey,
