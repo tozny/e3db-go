@@ -60,12 +60,12 @@ func setup() {
 	pubBytes2, _ := base64Decode(pub2)
 	privBytes2, _ := base64Decode(priv2)
 
-	clientDetails, err := RegisterClient(token, clientName, pub, "", false, apiURL)
+	clientDetails, _, err := RegisterClient(token, clientName, pub, "", false, apiURL)
 	if err != nil {
 		dieErr(err)
 	}
 
-	shareClientDetails, err := RegisterClient(token, shareClientName, pub2, "", false, apiURL)
+	shareClientDetails, _, err := RegisterClient(token, shareClientName, pub2, "", false, apiURL)
 	if err != nil {
 		dieErr(err)
 	}
@@ -125,7 +125,7 @@ func TestRegistration(t *testing.T) {
 
 	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
 
-	client, err := RegisterClient(token, clientName, pub, "", false, apiURL)
+	client, _, err := RegisterClient(token, clientName, pub, "", false, apiURL)
 
 	if err != nil {
 		t.Fatal(err)
