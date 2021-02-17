@@ -2,11 +2,11 @@
 
 # Overview
 
-The Tozny End-to-End Encrypted Database (E3DB) is a storage platform
+TozStore is an end-to-end encrypted database (E3DB). It's a storage platform
 with powerful sharing and consent management features.
-[Read more on our blog.](https://tozny.com/blog/announcing-project-e3db-the-end-to-end-encrypted-database/)
+[Read more on our website.](https://tozny.com/tozstore)
 
-E3DB provides a familiar JSON-based NoSQL-style API for reading, writing,
+TozStore provides a familiar JSON-based NoSQL-style API for reading, writing,
 and querying data stored securely in the cloud.
 
 This repository contains a client library and command-line tool E3DB.
@@ -46,11 +46,13 @@ by running:
 $ go get github.com/tozny/e3db-go/v2
 ```
 
+Note that prior to go version 1.14, modules are non-standard and require setting GOMODULE11=on.
+
 ## Registering a client
 
-Register an account with [InnoVault](https://innovault.io) to get started. From the Admin Console you can create clients directly (and grab their credentials from the console) or create registration tokens to dynamically create clients with `e3db.RegisterClient()`. Clients registered from within the console will automatically back their credentials up to your account. Clients created dynamically via the SDK can _optionally_ back their credentials up to your account.
+Get an API key by [registring a free account](https://dashboard.tozny.com/register) to get started. From the Admin Console you can create clients directly (and grab their credentials from the console) or create registration tokens to dynamically create clients with `e3db.RegisterClient()`. Clients registered from within the console will automatically back their credentials up to your account. Clients created dynamically via the SDK can _optionally_ back their credentials up to your account.
 
-For a more complete walkthrough, see [`/registration_example/registration.go`](https://github.com/tozny/e3db-go/blob/master/registration_example/registration.go).
+For a more complete walkthrough, see [`/example_registration_test.go`](https://github.com/tozny/e3db-go/blob/master/example_registration_test.go).
 
 ### Without Credential Backup
 
@@ -146,7 +148,7 @@ fmt.Println (newRecord.Data["first_name"])
 
 ## Documentaton
 
-Comprehensive documentation for the SDK can be found online [via GoDoc](https://godoc.org/github.com/tozny/e3db-go).
+The SDK is documented with standard Go documentation that most IDEs can parse.
 
 [travis-image]: https://travis-ci.org/tozny/e3db-go.svg?branch=master
 [travis-url]: https://travis-ci.org/tozny/e3db-go
