@@ -161,8 +161,7 @@ func fileExists(name string) (bool, error) {
 // given profile name.
 func ProfileExists(profile string) bool {
 	configExists, _ := fileExists(fmt.Sprintf(ProfileInterpolationConfigFilePath, profile))
-	keyExists, _ := fileExists(fmt.Sprintf("~/.tozny/%s/e3db_key.json", profile))
-	return configExists && keyExists
+	return configExists
 }
 
 // DefaultConfig loads the default E3DB configuration.
