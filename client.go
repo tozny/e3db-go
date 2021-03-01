@@ -1,12 +1,12 @@
 //
 // client.go --- Golang e3db client.
 //
-// Copyright (C) 2020, Tozny, LLC.
+// Copyright (C) 2021, Tozny, LLC.
 // All Rights Reserved.
 //
 
 /*
-Package e3db provides programmatic access to the e3db API/Innovault service for the secure transmission and storage of arbitrary data encrypted locally using this SDK.
+Package e3db provides programmatic access to the e3db API/TozStore service for the secure transmission and storage of arbitrary data encrypted locally using this SDK.
 
 Official documentation for e3db can be found at https://tozny.com/documentation/e3db/
 
@@ -150,7 +150,7 @@ func GetClient(opts ClientOpts) (*Client, error) {
 	}, nil
 }
 
-// RegisterClient creates a new client for a given InnoVault account
+// RegisterClient creates a new client for a given TozStore account
 func RegisterClient(registrationToken string, clientName string, publicKey string, privateKey string, backup bool, apiURL string) (*ClientDetails, string, error) {
 	if apiURL == "" {
 		apiURL = defaultStorageURL

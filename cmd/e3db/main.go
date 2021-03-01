@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jawher/mow.cli"
+	cli "github.com/jawher/mow.cli"
 	"github.com/tozny/e3db-go/v2"
 	"golang.org/x/crypto/nacl/box"
 )
@@ -575,7 +575,7 @@ func cmdRegister(cmd *cli.Cmd) {
 
 	token := cmd.String(cli.StringArg{
 		Name:      "TOKEN",
-		Desc:      "registration token from the InnoVault admin console",
+		Desc:      "registration token from the TozStore admin console",
 		Value:     "",
 		HideValue: false,
 	})
