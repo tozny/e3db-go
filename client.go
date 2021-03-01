@@ -220,6 +220,45 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 	return details, apiURL, nil
 }
 
+// RegisterAndSaveClient creates a client and saves it to the given configuration name, returning a usable client.
+func RegisterAndSaveClient(token string, configName string, backup bool, apiURL string) (*Client, string, error) {
+	if ProfileExists(configName) {
+		return nil, "", fmt.Errorf("attempted to create profile that already exists '%s'", configName)
+	}
+	publicKey, privateKey, _ := GenerateKeyPair()
+	var sendKey string
+	if backup {
+		sendKey = privateKey
+	} else {
+		sendKey = ""
+	}
+	clientInfo, backupClient, err := RegisterClient(token, configName, publicKey, sendKey, backup, apiURL)
+	if err != nil {
+		return nil, "", err
+	}
+
+	pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey)
+	privBytes, _ := base64.RawURLEncoding.DecodeString(privateKey)
+
+	config := &ClientOpts{
+		ClientID:    clientInfo.ClientID,
+		ClientEmail: "",
+		APIKeyID:    clientInfo.ApiKeyID,
+		APISecret:   clientInfo.ApiSecret,
+		PublicKey:   MakePublicKey(pubBytes),
+		PrivateKey:  MakePrivateKey(privBytes),
+		APIBaseURL:  apiURL,
+		Logging:     false,
+	}
+
+	err = SaveConfig(configName, config)
+	if err != nil {
+		return nil, "", err
+	}
+	client, retErr := GetClient(*config)
+	return client, backupClient, retErr
+}
+
 func (c *Client) apiURL() string {
 	if c.Options.APIBaseURL == "" {
 		return defaultStorageURL
