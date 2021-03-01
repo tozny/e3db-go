@@ -145,7 +145,6 @@ func GetDefaultClient() (*Client, error) {
 // GetClient creates an E3DB client given a custom set of options. Use
 // 'GetConfig' to load options from a configuration profile.
 func GetClient(opts ClientOpts) (*Client, error) {
-        fmt.Println("GetClient")
 	return &Client{
 		Options: opts,
 	}, nil
