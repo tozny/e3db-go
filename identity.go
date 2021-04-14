@@ -158,57 +158,17 @@ func (r *Realm) Register(username, password, registrationToken, email, firstName
 	return identity, nil
 }
 
-func (i *Identity) deriveCredentails(password string, nameSalt string) (string, e3dbClients.EncryptionKeys, e3dbClients.SigningKeys, error) {
-	nameSeed := fmt.Sprintf("%s@realm:%s", i.Username, i.Realm.Name)
-	if nameSalt != "" {
-		nameSeed = fmt.Sprintf("%s:%s", nameSalt, nameSeed)
-	}
-	hashedMessageAccumlator, err := blake2b.New(e3dbClients.Blake2BBytes, nil)
-	if err != nil {
-		return "", e3dbClients.EncryptionKeys{}, e3dbClients.SigningKeys{}, err
-	}
-	hashedMessageAccumlator.Write([]byte(nameSeed))
-	hashedMessageBytes := hashedMessageAccumlator.Sum(nil)
-	noteName := e3dbClients.Base64Encode(hashedMessageBytes)
-	cryptoPublicKey, cryptoPrivateKey := e3dbClients.DeriveCryptoKey(
-		[]byte(password),
-		[]byte(nameSeed),
-		e3dbClients.IdentityDerivationRounds,
-	)
-	cryptoKeyPair := e3dbClients.EncryptionKeys{
-		Public: e3dbClients.Key{
-			Type:     e3dbClients.DefaultEncryptionKeyType,
-			Material: e3dbClients.Base64Encode(cryptoPublicKey[:]),
-		},
-		Private: e3dbClients.Key{
-			Type:     e3dbClients.DefaultEncryptionKeyType,
-			Material: e3dbClients.Base64Encode(cryptoPrivateKey[:]),
-		},
-	}
-	signingPublicKey, signingPrivateKey := e3dbClients.DeriveSigningKey(
-		[]byte(password),
-		[]byte(cryptoKeyPair.Public.Material+cryptoKeyPair.Private.Material),
-		e3dbClients.IdentityDerivationRounds,
-	)
-	signingKeyPair := e3dbClients.SigningKeys{
-		Public: e3dbClients.Key{
-			Type:     e3dbClients.DefaultSigningKeyType,
-			Material: e3dbClients.Base64Encode(signingPublicKey[:]),
-		},
-		Private: e3dbClients.Key{
-			Type:     e3dbClients.DefaultSigningKeyType,
-			Material: e3dbClients.Base64Encode(signingPrivateKey[:]),
-		},
-	}
-	return noteName, cryptoKeyPair, signingKeyPair, nil
+func (i *Identity) DeriveCredentails(password string, nameSalt string) (string, e3dbClients.EncryptionKeys, e3dbClients.SigningKeys, error) {
+	return e3dbClients.DeriveCredentials(i.Username, password, i.Realm.Name, nameSalt)
 }
+
 
 func (i *Identity) writePasswordNote(password string) (*storageClient.Note, error) {
 	info, err := i.Realm.Info()
 	if err != nil {
 		return &storageClient.Note{}, err
 	}
-	noteName, encryptionKeyPair, signingKeyPair, err := i.deriveCredentails(password, "")
+	noteName, encryptionKeyPair, signingKeyPair, err := i.DeriveCredentails(password, "")
 	if err != nil {
 		return &storageClient.Note{}, err
 	}
@@ -291,7 +251,7 @@ func (i *Identity) writeBrokerNotes(email string) ([]*storageClient.Note, error)
 		if err != nil {
 			return []*storageClient.Note{}, err
 		}
-		noteName, cryptoKeyPair, signingKeyPair, err := i.deriveCredentails(noteKey, noteInfo.keyType)
+		noteName, cryptoKeyPair, signingKeyPair, err := i.DeriveCredentails(noteKey, noteInfo.keyType)
 		if err != nil {
 			return []*storageClient.Note{}, err
 		}

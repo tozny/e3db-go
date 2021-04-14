@@ -4,11 +4,11 @@ go 1.13
 
 require (
 	github.com/google/uuid v1.1.0
+	github.com/gorilla/websocket v1.4.0 // indirect
 	github.com/jawher/mow.cli v1.0.4
 	github.com/mitchellh/go-homedir v1.0.0
 	github.com/stretchr/testify v1.6.1 // indirect
-	github.com/tozny/e3db-clients-go v0.0.132
-	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
+	github.com/tozny/e3db-clients-go v0.0.143-0.20210426210459-320a9cfdfc68 // indirect
+	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
-	google.golang.org/appengine v1.6.6 // indirect
 )

@@ -696,6 +696,10 @@ func GetSDKV3(configJSONFilePath string) (*ToznySDKV3, error) {
 	if err != nil {
 		return nil, err
 	}
+	return sdkV3FromConfig(config)
+}
+
+func sdkV3FromConfig(config ToznySDKJSONConfig) (*ToznySDKV3, error) {
 	return NewToznySDKV3(ToznySDKConfig{
 		ClientConfig: e3dbClients.ClientConfig{
 			ClientID:  config.ClientID,
@@ -728,6 +732,141 @@ func GetSDKV3(configJSONFilePath string) (*ToznySDKV3, error) {
 		AccountPassword: config.AccountPassword,
 		APIEndpoint:     config.APIBaseURL,
 	})
+}
+
+type LoginActionData = map[string]string
+
+type TozIDLoginRequest struct {
+	Username  string
+	Password  string
+	RealmName string
+
+	APIBaseURL string
+	LoginHandler func(response *identityClient.IdentitySessionRequestResponse) (LoginActionData, error)
+}
+
+//GetSDKV3ForTozIDUser logs in a TozID user and returns the storage client of that user as a ToznySDKV3
+func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
+	if login.APIBaseURL == "" {
+		login.APIBaseURL = "https://api.e3db.com"
+	}
+	username := strings.ToLower(login.Username)
+	anonConfig := e3dbClients.ClientConfig{
+		Host:      login.APIBaseURL,
+		AuthNHost: login.APIBaseURL,
+	}
+	ctx := context.Background()
+	anonymousClient := identityClient.New(anonConfig)
+	realmInfo, err := anonymousClient.RealmInfo(ctx, login.RealmName)
+	if err != nil {
+		// TODO: better error message for failure to get realmInfo
+		return nil, err
+	}
+	noteName, encryptionKeys, signingKeys, err := e3dbClients.DeriveCredentials(username, login.Password, realmInfo.Name, "")
+	if err != nil {
+		return nil, err
+	}
+	clientConfig := e3dbClients.ClientConfig{
+		Host:           login.APIBaseURL,
+		AuthNHost:      login.APIBaseURL,
+		SigningKeys:    signingKeys,
+		EncryptionKeys: encryptionKeys,
+	}
+	idClient := identityClient.New(clientConfig)
+	loginResponse, err := idClient.InitiateIdentityLogin(ctx, identityClient.IdentityLoginRequest{
+		Username:   username,
+		RealmName:  login.RealmName,
+		AppName:    "account",
+		LoginStyle: "api",
+	})
+	if err != nil {
+		return nil, err
+	}
+	sessionResponse, err := idClient.IdentitySessionRequest(ctx, realmInfo.Name, *loginResponse)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: rework this to support brokered logins. See JS SDK for examples
+	for {
+		if sessionResponse.LoginActionType == "fetch" {
+			break
+		}
+		switch sessionResponse.LoginActionType {
+		case "continue":
+			data := url.Values{}
+			request, err := http.NewRequest("POST", sessionResponse.ActionURL, strings.NewReader(data.Encode()))
+			if err != nil {
+				return nil, err
+			}
+			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			if login.LoginHandler == nil {
+				return nil, fmt.Errorf("A Login handler must be provided for action type %s", sessionResponse.LoginActionType)
+			}
+			data, err := login.LoginHandler(sessionResponse)
+			if err != nil {
+				return nil, err
+			}
+			var reader io.Reader
+			if sessionResponse.ContentType == "application/x-www-form-urlencoded" {
+				values := url.Values{}
+				for key, value := range data {
+					values.Set(key, value)
+				}
+				reader = strings.NewReader(values.Encode())
+			} else {
+				var buf bytes.Buffer
+				err := json.NewEncoder(&buf).Encode(&data)
+				if err != nil {
+					return nil, err
+				}
+				reader = &buf
+			}
+			request, err := http.NewRequest("POST", sessionResponse.ActionURL, reader)
+			request.Header.Set("Content-Type", sessionResponse.ContentType)
+			if err != nil {
+				return nil, err
+			}
+			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
+			if err != nil {
+				return nil, err
+			} else if sessionResponse.Message.IsError {
+				return nil, fmt.Errorf(sessionResponse.Message.Summary)
+			}
+		}
+	}
+	redirectRequest := identityClient.IdentityLoginRedirectRequest{
+		RealmName: realmInfo.Domain,
+		// The following map values if not present will be set to the empty string and identity service will handle appropriately
+		SessionCode:   sessionResponse.Context["session_code"],
+		Execution:     sessionResponse.Context["execution"],
+		TabID:         sessionResponse.Context["tab_id"],
+		ClientID:      sessionResponse.Context["client_id"],
+		AuthSessionId: sessionResponse.Context["auth_session_id"],
+	}
+	redirect, err := idClient.IdentityLoginRedirect(ctx, redirectRequest)
+	if err != nil {
+		return nil, err
+	}
+	storage := storageClient.New(clientConfig)
+	note, err := storage.ReadNoteByName(ctx, noteName, map[string]string{storageClient.TozIDLoginTokenHeader: redirect.AccessToken})
+	if err != nil {
+		return nil, err
+	}
+	err = storage.DecryptNote(note)
+	if err != nil {
+		return nil, err
+	}
+	var config ToznySDKJSONConfig
+	err = json.Unmarshal([]byte(note.Data["storage"]), &config)
+	if err != nil {
+		return nil, err
+	}
+	return sdkV3FromConfig(config)
+
 }
 
 // CreateResponse wraps the value return from the account creation method
