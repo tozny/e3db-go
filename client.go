@@ -762,7 +762,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 		// TODO: better error message for failure to get realmInfo
 		return nil, err
 	}
-	noteName, encryptionKeys, signingKeys, err := e3dbClients.DeriveCredentials(username, login.Password, realmInfo.Name, "")
+	noteName, encryptionKeys, signingKeys, err := e3dbClients.DeriveIdentityCredentials(username, login.Password, realmInfo.Name, "")
 	if err != nil {
 		return nil, err
 	}

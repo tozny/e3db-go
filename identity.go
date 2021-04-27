@@ -159,7 +159,7 @@ func (r *Realm) Register(username, password, registrationToken, email, firstName
 }
 
 func (i *Identity) DeriveCredentails(password string, nameSalt string) (string, e3dbClients.EncryptionKeys, e3dbClients.SigningKeys, error) {
-	return e3dbClients.DeriveCredentials(i.Username, password, i.Realm.Name, nameSalt)
+	return e3dbClients.DeriveIdentityCredentials(i.Username, password, i.Realm.Name, nameSalt)
 }
 
 
