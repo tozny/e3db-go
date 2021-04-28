@@ -736,14 +736,17 @@ func sdkV3FromConfig(config ToznySDKJSONConfig) (*ToznySDKV3, error) {
 
 type LoginActionData = map[string]string
 
+type IdentitySessionIntermediateResponse = identityClient.IdentitySessionRequestResponse
+
 type TozIDLoginRequest struct {
 	Username  string
 	Password  string
 	RealmName string
 
 	APIBaseURL string
-	LoginHandler func(response *identityClient.IdentitySessionRequestResponse) (LoginActionData, error)
+	LoginHandler func(response *IdentitySessionIntermediateResponse) (LoginActionData, error)
 }
+
 
 //GetSDKV3ForTozIDUser logs in a TozID user and returns the storage client of that user as a ToznySDKV3
 func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {

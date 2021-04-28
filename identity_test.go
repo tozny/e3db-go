@@ -2,7 +2,6 @@ package e3db
 
 import (
 	"fmt"
-	"github.com/tozny/e3db-clients-go/identityClient"
 	"testing"
 )
 
@@ -21,7 +20,7 @@ func TestToznySDKV3_Login(t *testing.T) {
 	fmt.Printf("%v", sdk)
 }
 
-func mfaHandler(sessionResponse *identityClient.IdentitySessionRequestResponse) (LoginActionData, error) {
+func mfaHandler(sessionResponse *IdentitySessionIntermediateResponse) (LoginActionData, error) {
 	if sessionResponse.LoginActionType == "login-totp" {
 		totpValue := make(map[string]string)
 		totpValue["otp"] = ""
