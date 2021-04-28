@@ -752,6 +752,8 @@ type TozIDLoginRequest struct {
 func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	if login.APIBaseURL == "" {
 		login.APIBaseURL = "https://api.e3db.com"
+	} else {
+		login.APIBaseURL = strings.TrimSuffix(strings.TrimSpace(login.APIBaseURL), "/")
 	}
 	username := strings.ToLower(login.Username)
 	anonConfig := e3dbClients.ClientConfig{

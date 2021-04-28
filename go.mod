@@ -7,7 +7,9 @@ require (
 	github.com/jawher/mow.cli v1.0.4
 	github.com/mitchellh/go-homedir v1.0.0
 	github.com/stretchr/testify v1.6.1 // indirect
-	github.com/tozny/e3db-clients-go v0.0.143
+	github.com/tozny/e3db-clients-go v0.0.144-0.20210428154208-cc5c7c2fe4ee
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 )
+
+replace github.com/tozny/e3db-clients-go => ../e3db-clients-go
