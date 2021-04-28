@@ -742,9 +742,9 @@ type IdentitySessionIntermediateResponse = identityClient.IdentitySessionRequest
 
 // TozIDLoginRequest is used to login to a TozID account to get a ToznySDKV3 or active TozID session (future plan)
 type TozIDLoginRequest struct {
-	Username  string
-	Password  string
-	RealmName string
+	Username     string
+	Password     string
+	RealmName    string
 	APIBaseURL   string
 	LoginHandler func(response *IdentitySessionIntermediateResponse) (LoginActionData, error)
 }
