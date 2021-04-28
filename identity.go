@@ -162,7 +162,6 @@ func (i *Identity) DeriveCredentails(password string, nameSalt string) (string, 
 	return e3dbClients.DeriveIdentityCredentials(i.Username, password, i.Realm.Name, nameSalt)
 }
 
-
 func (i *Identity) writePasswordNote(password string) (*storageClient.Note, error) {
 	info, err := i.Realm.Info()
 	if err != nil {

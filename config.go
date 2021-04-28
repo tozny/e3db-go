@@ -109,7 +109,7 @@ func loadConfig(configPath string) (*ClientOpts, error) {
 	}, nil
 }
 
-func saveConfig(configPath string, opts *ClientOpts) error {
+func saveJson(configPath string, obj interface{}) error {
 	configFullPath, err := homedir.Expand(configPath)
 	if err != nil {
 		return err
@@ -126,6 +126,14 @@ func saveConfig(configPath string, opts *ClientOpts) error {
 	}
 	defer configFd.Close()
 
+	if err = json.NewEncoder(configFd).Encode(&obj); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func saveConfig(configPath string, opts *ClientOpts) error {
 	configObj := configFile{
 		Version:     1,
 		ClientID:    opts.ClientID,
@@ -137,11 +145,7 @@ func saveConfig(configPath string, opts *ClientOpts) error {
 		PrivateKey:  encodePrivateKey(opts.PrivateKey),
 	}
 
-	if err = json.NewEncoder(configFd).Encode(&configObj); err != nil {
-		return err
-	}
-
-	return nil
+	return saveJson(configPath, configObj)
 }
 
 func fileExists(name string) (bool, error) {
@@ -213,4 +217,8 @@ func LoadConfigFile(configPath string) (ToznySDKJSONConfig, error) {
 		return config, err
 	}
 	return config, nil
+}
+
+func StoreConfigFile(configPath string, config ToznySDKJSONConfig) error {
+	return saveJson(configPath, config)
 }

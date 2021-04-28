@@ -659,6 +659,7 @@ type ToznySDKV3 struct {
 	APIEndpoint string
 	// Tozny server defined globally unique id for this Client.
 	ClientID string
+	config   e3dbClients.ClientConfig
 }
 
 // ToznySDKConfig wraps parameters needed to configure a ToznySDK
@@ -686,6 +687,7 @@ func NewToznySDKV3(config ToznySDKConfig) (*ToznySDKV3, error) {
 		AccountPassword:    config.AccountPassword,
 		APIEndpoint:        config.APIEndpoint,
 		ClientID:           config.ClientID,
+		config:             config.ClientConfig,
 	}, nil
 }
 
@@ -738,15 +740,14 @@ type LoginActionData = map[string]string
 
 type IdentitySessionIntermediateResponse = identityClient.IdentitySessionRequestResponse
 
+// TozIDLoginRequest is used to login to a TozID account to get a ToznySDKV3 or active TozID session (future plan)
 type TozIDLoginRequest struct {
 	Username  string
 	Password  string
 	RealmName string
-
-	APIBaseURL string
+	APIBaseURL   string
 	LoginHandler func(response *IdentitySessionIntermediateResponse) (LoginActionData, error)
 }
-
 
 //GetSDKV3ForTozIDUser logs in a TozID user and returns the storage client of that user as a ToznySDKV3
 func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
@@ -765,7 +766,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	realmInfo, err := anonymousClient.RealmInfo(ctx, login.RealmName)
 	if err != nil {
 		// TODO: better error message for failure to get realmInfo
-		return nil, err
+		return nil, fmt.Errorf("GetSDKV3ForTozIDUser: failed to get realm infor with error %w", err)
 	}
 	noteName, encryptionKeys, signingKeys, err := e3dbClients.DeriveIdentityCredentials(username, login.Password, realmInfo.Name, "")
 	if err != nil {
@@ -831,10 +832,10 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 				reader = &buf
 			}
 			request, err := http.NewRequest("POST", sessionResponse.ActionURL, reader)
-			request.Header.Set("Content-Type", sessionResponse.ContentType)
 			if err != nil {
 				return nil, err
 			}
+			request.Header.Set("Content-Type", sessionResponse.ContentType)
 			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
 			if err != nil {
 				return nil, err
@@ -923,6 +924,27 @@ type ClientConfig struct {
 	PrivateKey        string `json:"private_key"`
 	PublicSigningKey  string `json:"public_signing_key"`
 	PrivateSigningKey string `json:"private_signing_key"`
+}
+
+// StoreConfigFile stores a ToznySDKV3 config file at the specified path, returning an error if any
+func (c *ToznySDKV3) StoreConfigFile(path string) error {
+	config := ToznySDKJSONConfig{
+		ConfigFile: ConfigFile{
+			Version:     2,
+			APIBaseURL:  c.APIEndpoint,
+			APIKeyID:    c.config.APIKey,
+			APISecret:   c.config.APISecret,
+			ClientID:    c.config.ClientID,
+			ClientEmail: "",
+			PublicKey:   c.config.EncryptionKeys.Public.Material,
+			PrivateKey:  c.config.EncryptionKeys.Private.Material,
+		},
+		PublicSigningKey:  c.config.SigningKeys.Public.Material,
+		PrivateSigningKey: c.config.SigningKeys.Private.Material,
+		AccountUsername:   c.AccountUsername,
+		AccountPassword:   c.AccountPassword,
+	}
+	return saveJson(path, config)
 }
 
 // Register attempts to create a valid TozStore account returning the root client config for the created account and error (if any).

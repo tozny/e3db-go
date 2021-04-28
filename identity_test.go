@@ -7,10 +7,10 @@ import (
 
 func TestToznySDKV3_Login(t *testing.T) {
 	request := TozIDLoginRequest{
-		Username:   "",
-		Password:   "",
-		RealmName:  "",
-		APIBaseURL: "https://api.e3db.com",
+		Username:     "",
+		Password:     "",
+		RealmName:    "",
+		APIBaseURL:   "https://api.e3db.com",
 		LoginHandler: mfaHandler,
 	}
 	sdk, err := GetSDKV3ForTozIDUser(request)
