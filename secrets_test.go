@@ -3,14 +3,15 @@ package e3db
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 )
 
 var (
-	realmName = "secretAlannah2"      //os.Getenv("ID_REALM_NAME")
-	username  = "alannah1"            //os.Getenv("USERNAME")
-	password  = "They@r3class"        // os.Getenv("PASSWORD")
-	baseURL   = "http://dev.e3db.com" // os.Getenv("API_URL")
+	realmName = os.Getenv("ID_REALM_NAME")
+	username  = os.Getenv("USERNAME")
+	password  = os.Getenv("PASSWORD")
+	baseURL   = os.Getenv("API_URL")
 	testCtx   = context.Background()
 )
 
