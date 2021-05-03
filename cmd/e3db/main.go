@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jawher/mow.cli"
+	cli "github.com/jawher/mow.cli"
 	"github.com/tozny/e3db-go/v2"
 	"golang.org/x/crypto/nacl/box"
 )
@@ -919,10 +919,61 @@ func cmdUnbrokerShare(cmd *cli.Cmd) {
 	}
 }
 
+func cmdCreateSecret(cmd *cli.Cmd) {
+	// how should input be given to create secret? a whole type? or just a bunch of different strings??
+	secretType := cmd.String(cli.StringArg{
+		Name:      "SECRET_TYPE",
+		Desc:      "type of secret to write",
+		Value:     "",
+		HideValue: true,
+	})
+	secretName := cmd.String(cli.StringArg{
+		Name:      "SECRET_NAME",
+		Desc:      "name for the secret",
+		Value:     "",
+		HideValue: true,
+	})
+	secretValue := cmd.String(cli.StringOpt{
+		Name:      "SECRET_VALUE",
+		Desc:      "secret data",
+		Value:     "",
+		HideValue: true,
+	})
+	description := cmd.String(cli.StringOpt{
+		Name:      "DESCRIPTION",
+		Desc:      "description of secret",
+		Value:     "",
+		HideValue: true,
+	})
+	secret := e3db.SecretRequest{
+		SecretType:  *secretType,
+		SecretName:  *secretName,
+		SecretValue: *secretValue,
+		Description: *description,
+	}
+	fmt.Println("secret", secret)
+	// then call CreateSecret(secret)
+	cmd.Action = func() {
+		// sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		// if err != nil {
+		// 	dieErr(err)
+		// }
+		// ctx := context.Background()
+		// request := e3db.TozIDLoginRequest{
+		// 	Username: "",
+		// 	Password: "",
+		// 	RealmName: "",
+		// 	APIBaseURL: "https://api.e3db.com",
+		// 	LoginHandler: ,
+		// }
+		// secret, msg, err := sdk.CreateSecret(ctx, )
+	}
+}
+
 func main() {
 	app := cli.App("e3db-cli", "E3DB Command Line Interface")
 
-	app.Version("v version", "e3db-cli 2.1.1")
+	app.Version("v version", "e3db-cli 2.1.2")
 
 	options.Logging = app.BoolOpt("d debug", false, "enable debug logging")
 	options.Profile = app.StringOpt("p profile", "", "e3db configuration profile")
@@ -951,5 +1002,8 @@ func main() {
 	app.Command("lsrealms", "list realms", cmdListRealms)
 	app.Command("signup", "signup for a new account", cmdSignup)
 	app.Command("login", "login to fetch credentials and account token", cmdLogin)
+	app.Command("secret", "work with secrets", func(cmd *cli.Cmd) {
+		cmd.Command("create", "create a new secret", cmdCreateSecret)
+	})
 	app.Run(os.Args)
 }
