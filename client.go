@@ -54,17 +54,20 @@ const PRIVATE_SIGNING_LENGTH = 86
 const PUBLIC_KEY_LENGTH = 43
 const PRIVATE_KEY_LENGTH = 43
 
-var REQUIRED_CLIENT_KEYS = []string{
-	"version",
-	"public_signing_key",
-	"private_signing_key",
-	"client_id",
-	"api_key_id",
-	"api_secret",
-	"public_key",
-	"private_key",
-	"api_url",
-}
+var (
+	REQUIRED_CLIENT_KEYS = []string{
+		"version",
+		"public_signing_key",
+		"private_signing_key",
+		"client_id",
+		"api_key_id",
+		"api_secret",
+		"public_key",
+		"private_key",
+		"api_url",
+	}
+	encryptedFileName = "encrypted"
+)
 
 type akCacheKey struct {
 	WriterID string
@@ -1422,7 +1425,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 	}
 	matched, err := regexp.MatchString(`^[a-zA-Z0-9-_]{1,50}$`, secret.SecretName)
 	if err != nil {
-		return createdSecret, "regex failed", err
+		return createdSecret, "", err
 	}
 	if !matched {
 		return createdSecret, "Secret name must contain 1-50 alphanumeric characters, -, or _", nil
@@ -1449,16 +1452,16 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 	}
 	responseList, err := c.StorageClient.ListGroups(ctx, listRequest)
 	if err != nil {
-		return createdSecret, "err listing groups", err
+		return createdSecret, "", err
 	}
 	var group storageClient.Group
 	encryptionKeyPair, err := e3dbClients.GenerateKeyPair()
 	if err != nil {
-		return createdSecret, "could not create encryption key pair", err
+		return createdSecret, "", err
 	}
 	eak, err := e3dbClients.EncryptPrivateKey(encryptionKeyPair.Private, c.StorageClient.EncryptionKeys)
 	if err != nil {
-		return createdSecret, "could not encrypt pk", err
+		return createdSecret, "", err
 	}
 	if len(responseList.Groups) < 1 {
 		// create group
@@ -1469,7 +1472,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 		}
 		createGroupResponse, err := c.StorageClient.CreateGroup(ctx, groupReq)
 		if err != nil {
-			return createdSecret, "could not create group", err
+			return createdSecret, "", err
 		}
 		group = *createGroupResponse
 		// get membership keys
@@ -1481,7 +1484,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 		}
 		membershipKeyResp, err := c.StorageClient.CreateGroupMembershipKey(ctx, membershipKeyRequest)
 		if err != nil {
-			return createdSecret, "could not create group membership key", err
+			return createdSecret, "", err
 		}
 		// make the capabilities
 		groupMemberCapabilities := []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
@@ -1497,9 +1500,9 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 			GroupID:      createGroupResponse.GroupID,
 			GroupMembers: memberReq,
 		}
-		/*addToGroupResp*/ _, err = c.StorageClient.AddGroupMembers(ctx, addMemberReq)
+		_, err = c.StorageClient.AddGroupMembers(ctx, addMemberReq)
 		if err != nil {
-			return createdSecret, "could not add group member", err
+			return createdSecret, "", err
 		}
 	} else {
 		// the group already exists
@@ -1522,15 +1525,15 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 		}
 		ak, err := c.E3dbPDSClient.GetOrCreateAccessKey(ctx, keyReq)
 		if err != nil {
-			return createdSecret, "could not get or create ak", err
+			return createdSecret, "", err
 		}
 		// Encrypt the file
-		size, checksum, err := e3dbClients.EncryptFile(secret.FileName, "encrypted", ak)
+		size, checksum, err := e3dbClients.EncryptFile(secret.FileName, encryptedFileName, ak)
 		if err != nil {
-			return createdSecret, "err", err
+			return createdSecret, "", err
 		}
 		defer func() {
-			err := os.Remove("encrypted")
+			err := os.Remove(encryptedFileName)
 			if err != nil {
 				fmt.Println("CreateSecret: error removing encrypted")
 			}
@@ -1551,22 +1554,22 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 		}
 		pendingFileURL, err := c.StorageClient.WriteFile(ctx, recordToWrite)
 		if err != nil {
-			return createdSecret, "could not write file", err
+			return createdSecret, "", err
 		}
 		uploadRequest := file.UploadRequest{
 			URL:               pendingFileURL.FileURL,
-			EncryptedFileName: "encrypted",
+			EncryptedFileName: encryptedFileName,
 			Checksum:          checksum,
 			Size:              size,
 		}
 		uploadResp, err := file.UploadFile(uploadRequest)
 		if err != nil || uploadResp != 0 {
-			return createdSecret, "could not upload", err
+			return createdSecret, "", err
 		}
 		// Register the file as being written
 		response, err := c.StorageClient.FileCommit(ctx, pendingFileURL.PendingFileID)
 		if err != nil {
-			return createdSecret, "could not commit", err
+			return createdSecret, "", err
 		}
 		// get the file from the record
 		createdSecret = &pdsClient.Record{
@@ -1597,11 +1600,11 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 		}
 		encryptedRecord, err := c.E3dbPDSClient.EncryptRecord(ctx, recordToWrite)
 		if err != nil {
-			return createdSecret, "could not encrypt record", err
+			return createdSecret, "", err
 		}
 		createdSecret, err = c.E3dbPDSClient.WriteRecord(ctx, encryptedRecord)
 		if err != nil {
-			return createdSecret, "could not write record", err
+			return createdSecret, "", err
 		}
 	}
 	keyReq := pdsClient.GetOrCreateAccessKeyRequest{
@@ -1612,11 +1615,11 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 	}
 	keyResp, err := c.E3dbPDSClient.GetOrCreateAccessKey(ctx, keyReq)
 	if err != nil {
-		return createdSecret, "could not get or create ak", err
+		return createdSecret, "", err
 	}
 	wrappedAK, err := EncryptAccessKeyForGroup(*c.StorageClient, keyResp)
 	if err != nil {
-		return createdSecret, "could not encrypt ak for group", err
+		return createdSecret, "", err
 	}
 	accessKeyReq := storageClient.GroupAccessKeyRequest{
 		GroupID:            group.GroupID,
@@ -1626,7 +1629,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 	}
 	_, encryptedGroupAK, err := c.StorageClient.CreateGroupAccessKey(ctx, accessKeyReq)
 	if err != nil {
-		return createdSecret, "could not get group ak", err
+		return createdSecret, "", err
 	}
 	// share secret with group
 	secretShareReq := storageClient.ShareGroupRecordRequest{
@@ -1637,7 +1640,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 	}
 	_, err = c.StorageClient.ShareRecordWithGroup(ctx, secretShareReq)
 	if err != nil {
-		return createdSecret, "could not share secret with group", err
+		return createdSecret, "", err
 	}
 	return createdSecret, "", nil
 }
