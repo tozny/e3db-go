@@ -31,7 +31,7 @@ func TestCreateAndListSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not log in %+v", err)
 	}
-	secretReq := SecretRequest{
+	secretReq := Secret{
 		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
 		SecretType:  "Credential",
 		SecretValue: uuid.New().String(),
@@ -49,19 +49,19 @@ func TestCreateAndListSecrets(t *testing.T) {
 		"api_url": "http://platform.local.tozny.com:8000",
 		"client_email": ""
 	}`
-	secretReq2 := SecretRequest{
+	secretReq2 := Secret{
 		SecretName:  fmt.Sprintf("cred-%s", uuid.New().String()),
 		SecretType:  "Client",
 		SecretValue: validClient,
 		Description: "a client cred test",
 	}
-	secret1, resp, err := sdk.CreateSecret(testCtx, request, secretReq)
-	if err != nil || resp != "" {
-		t.Fatalf("Could not create secret: Req: %+v Resp: %+v  Err: %+v", secretReq, resp, err)
+	secret1, err := sdk.CreateSecret(testCtx, request, secretReq)
+	if err != nil {
+		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
 	}
-	secret2, resp, err := sdk.CreateSecret(testCtx, request, secretReq2)
-	if err != nil || resp != "" {
-		t.Fatalf("Could not create secret: Req: %+v Resp: %+v  Err: %+v", secretReq2, resp, err)
+	secret2, err := sdk.CreateSecret(testCtx, request, secretReq2)
+	if err != nil {
+		t.Fatalf("Could not create secret: Req: %+v  Err: %+v", secretReq2, err)
 	}
 	listSecrets, err := sdk.ListSecrets(testCtx, request, 30, 0)
 	if err != nil {
@@ -106,15 +106,15 @@ func TestInvalidCredSecretFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not log in %+v", err)
 	}
-	secretReq := SecretRequest{
+	secretReq := Secret{
 		SecretName:  fmt.Sprintf("cred-%s", uuid.New().String()),
 		SecretType:  "Client",
 		SecretValue: invalidClient,
 		Description: "a client cred test",
 	}
-	_, resp, err := sdk.CreateSecret(testCtx, request, secretReq)
-	if resp != "Invalid key length: public_signing_key" {
-		t.Fatalf("Secret creation should have failed. Resp: %s Err: %v", resp, err)
+	_, err = sdk.CreateSecret(testCtx, request, secretReq)
+	if err.Error() != "Invalid key length: public_signing_key" {
+		t.Fatalf("Secret creation should have failed. Err: %v", err)
 	}
 }
 
@@ -130,15 +130,15 @@ func TestCreateAndViewSecretSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not log in %+v", err)
 	}
-	secretReq := SecretRequest{
+	secretReq := Secret{
 		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
 		SecretType:  "Credential",
 		SecretValue: uuid.New().String(),
 		Description: "a credential test",
 	}
-	secretCreated, resp, err := sdk.CreateSecret(testCtx, request, secretReq)
-	if err != nil || resp != "" {
-		t.Fatalf("Could not create secret: Req: %+v Resp: %+v  Err: %+v", secretReq, resp, err)
+	secretCreated, err := sdk.CreateSecret(testCtx, request, secretReq)
+	if err != nil {
+		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
 	}
 	secretView, err := sdk.ViewSecret(testCtx, secretCreated.Metadata.RecordID)
 	if err != nil {
@@ -176,15 +176,15 @@ func TestCreateAndViewFileSecretSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not write to plainFile: %+v", err)
 	}
-	secretReq := SecretRequest{
+	secretReq := Secret{
 		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
 		SecretType:  "File",
 		SecretValue: "",
 		Description: "a file test",
 		FileName:    plaintextFileName,
 	}
-	_, resp, err := sdk.CreateSecret(testCtx, request, secretReq)
-	if err != nil || resp != "" {
-		t.Fatalf("Could not create secret: Req: %+v Resp: %+v  Err: %+v", secretReq, resp, err)
+	_, err = sdk.CreateSecret(testCtx, request, secretReq)
+	if err != nil {
+		t.Fatalf("Could not create secret: Req: %+v  Err: %+v", secretReq, err)
 	}
 }
