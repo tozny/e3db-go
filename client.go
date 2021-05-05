@@ -772,7 +772,7 @@ type TozIDLoginRequest struct {
 	Password     string
 	RealmName    string
 	APIBaseURL   string
-	LoginHandler func(response *identityClient.IdentitySessionRequestResponse) (LoginActionData, error)
+	LoginHandler func(response *IdentitySessionIntermediateResponse) (LoginActionData, error)
 }
 
 //GetSDKV3ForTozIDUser logs in a TozID user and returns the storage client of that user as a ToznySDKV3
