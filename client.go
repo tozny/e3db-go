@@ -1403,20 +1403,37 @@ func (c *ToznySDKV3) UnbrokerShare(ctx context.Context, authorizerClientID strin
 }
 
 type Secret struct {
+	SecretType    string
+	SecretName    string
+	SecretValue   string
+	Description   string
+	FileName      string
+	SecretID      string
+	RealmName     string
+	OwnerUsername string
+	NamespaceId   string
+	Version       string
+	Record        *pdsClient.Record
+}
+
+type CreateSecretOptions struct {
 	SecretType  string
 	SecretName  string
 	SecretValue string
 	Description string
 	FileName    string
+	RealmName   string
 }
 
 // CreateSecret makes a secret of the specified type and share it with a group containing the writer
-func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, secret Secret) (*pdsClient.Record, error) {
+func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOptions) (*Secret, error) {
+	// once ToznySDKV3 is updated, this will be c.RealmName is secret.RealmName is empty
+	realmName := secret.RealmName
 	err := ValidateSecret(secret)
 	if err != nil {
 		return nil, err
 	}
-	group, err := c.GetOrCreateNamespace(ctx, login.RealmName, c.StorageClient.ClientID)
+	group, err := c.GetOrCreateNamespace(ctx, realmName, c.StorageClient.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -1428,19 +1445,21 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, login TozIDLoginRequest, 
 		"description": secret.Description,
 		"version":     timestamp,
 	}
-	var createdSecret *pdsClient.Record
+	// var createdSecret *Secret
+	var createdRecord *pdsClient.Record
 	if secret.SecretType == "File" {
-		createdSecret, err = c.WriteFile(ctx, recordType, plain, secret.FileName)
+		createdRecord, err = c.WriteFile(ctx, recordType, plain, secret.FileName)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		data := map[string]string{"secretValue": secret.SecretValue}
-		createdSecret, err = c.WriteRecord(ctx, data, recordType, plain)
+		createdRecord, err = c.WriteRecord(ctx, data, recordType, plain)
 		if err != nil {
 			return nil, err
 		}
 	}
+	createdSecret := c.MakeSecretResponse(createdRecord, group.GroupID.String(), "")
 	err = c.ShareRecordWithGroup(ctx, recordType, group)
 	if err != nil {
 		return nil, err
@@ -1660,7 +1679,7 @@ func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, realmName string,
 }
 
 // ValidateSecret checks that the secret contains valid input for each entry
-func ValidateSecret(secret Secret) error {
+func ValidateSecret(secret CreateSecretOptions) error {
 	secret.SecretName = strings.TrimSpace(secret.SecretName)
 	secret.SecretValue = strings.TrimSpace(secret.SecretValue)
 	if secret.SecretType == "" {
@@ -1776,17 +1795,23 @@ func VerifyRawClientCredentials(credential string) error {
 }
 
 type ListedSecrets struct {
-	List      []pdsClient.ListedRecord
+	List      []Secret
 	NextToken string
 }
 
+type ListSecretsOptions struct {
+	RealmName string
+	Limit     int
+	NextToken int64
+}
+
 // ListSecrets returns a list of up to limit secrets that are shared with or owned by the identity
-func (c *ToznySDKV3) ListSecrets(ctx context.Context, login TozIDLoginRequest, limit int, nextToken int64) (*ListedSecrets, error) {
+func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions) (*ListedSecrets, error) {
 	sharedSecrets := &ListedSecrets{}
 	listRequest := storageClient.ListGroupsRequest{
 		ClientID:  uuid.MustParse(c.StorageClient.ClientID),
-		NextToken: nextToken,
-		Max:       limit,
+		NextToken: options.NextToken,
+		Max:       options.Limit,
 	}
 	responseList, err := c.StorageClient.ListGroups(ctx, listRequest)
 	if err != nil {
@@ -1796,7 +1821,7 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, login TozIDLoginRequest, l
 		return sharedSecrets, nil
 	}
 	var found bool
-	sharedSecretList := []pdsClient.ListedRecord{}
+	sharedSecretList := []Secret{}
 	for index, group := range responseList.Groups {
 		if !ValidToznySecretNamespace(group.Name) {
 			continue
@@ -1811,7 +1836,7 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, login TozIDLoginRequest, l
 		for _, record := range listGroupRecords.ResultList {
 			found = false
 			for _, secret := range sharedSecretList {
-				if record.Metadata.RecordID == secret.Metadata.RecordID {
+				if record.Metadata.RecordID == secret.SecretID {
 					found = true
 				}
 			}
@@ -1823,7 +1848,7 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, login TozIDLoginRequest, l
 				}
 				// find the username for secret writer if it's someone else
 				searchParams := identityClient.SearchRealmIdentitiesRequest{
-					RealmName:         login.RealmName,
+					RealmName:         options.RealmName,
 					IdentityClientIDs: []uuid.UUID{uuid.MustParse(record.Metadata.WriterID)},
 				}
 				identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
@@ -1837,7 +1862,8 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, login TozIDLoginRequest, l
 				if err != nil {
 					return nil, err
 				}
-				sharedSecretList = append(sharedSecretList, *recordDecrypted)
+				secretDecrypted := c.MakeSecretResponse(recordDecrypted, group.GroupID.String(), username)
+				sharedSecretList = append(sharedSecretList, *secretDecrypted)
 			}
 		}
 	}
@@ -1846,10 +1872,12 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, login TozIDLoginRequest, l
 	return sharedSecrets, nil
 }
 
+type ViewSecretOptions struct {
+	SecretID string
+}
+
 // ViewSecret returns the decrypted secret with secretID
-func (c *ToznySDKV3) ViewSecret(ctx context.Context, secretID string) (*pdsClient.ListedRecord, error) {
-	// secret := pdsClient.ListedRecord{}
-	var secret *pdsClient.ListedRecord
+func (c *ToznySDKV3) ViewSecret(ctx context.Context, options ViewSecretOptions) (*Secret, error) {
 	listRequest := storageClient.ListGroupsRequest{
 		ClientID: uuid.MustParse(c.StorageClient.ClientID),
 	}
@@ -1857,6 +1885,8 @@ func (c *ToznySDKV3) ViewSecret(ctx context.Context, secretID string) (*pdsClien
 	if err != nil {
 		return nil, err
 	}
+	var secret *pdsClient.ListedRecord
+	var groupID string
 	for _, group := range groupList.Groups {
 		listReq := storageClient.ListGroupRecordsRequest{
 			GroupID: group.GroupID,
@@ -1866,16 +1896,18 @@ func (c *ToznySDKV3) ViewSecret(ctx context.Context, secretID string) (*pdsClien
 			return nil, err
 		}
 		for _, record := range listGroupRecords.ResultList {
-			if record.Metadata.RecordID == secretID {
+			if record.Metadata.RecordID == options.SecretID {
 				secret = &record
+				groupID = group.GroupID.String()
 			}
 		}
 	}
-	secret, err = c.DecryptTextSecret(ctx, secret)
+	recordDecrypted, err := c.DecryptTextSecret(ctx, secret)
 	if err != nil {
 		return nil, err
 	}
-	return secret, nil
+	secretDecrypted := c.MakeSecretResponse(recordDecrypted, groupID, "")
+	return secretDecrypted, nil
 }
 
 // ValidToznySecretNamespace returns true if the namespace is in the form of a tozny secret
@@ -1888,7 +1920,7 @@ func ValidToznySecretNamespace(groupName string) bool {
 }
 
 // DecryptTextSecret decrypts a non-file secret
-func (c *ToznySDKV3) DecryptTextSecret(ctx context.Context, secret *pdsClient.ListedRecord) (*pdsClient.ListedRecord, error) {
+func (c *ToznySDKV3) DecryptTextSecret(ctx context.Context, secret *pdsClient.ListedRecord) (*pdsClient.Record, error) {
 	encryptedRecord := pdsClient.Record{
 		Metadata:        secret.Metadata,
 		Data:            secret.Data,
@@ -1898,8 +1930,26 @@ func (c *ToznySDKV3) DecryptTextSecret(ctx context.Context, secret *pdsClient.Li
 	if err != nil {
 		return nil, err
 	}
-	secret.Metadata = decryptedRecord.Metadata
-	secret.Data = decryptedRecord.Data
-	secret.RecordSignature = decryptedRecord.RecordSignature
-	return secret, nil
+	return &decryptedRecord, nil
+}
+
+// MakeSecretResponse makes a secret containing from the record, group, and owner info
+func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID string, ownerUsername string) *Secret {
+	secret := &Secret{
+		SecretName:    secretRecord.Metadata.Plain["secretName"],
+		SecretType:    secretRecord.Metadata.Plain["secretType"],
+		SecretID:      secretRecord.Metadata.RecordID,
+		Description:   secretRecord.Metadata.Plain["description"],
+		Version:       secretRecord.Metadata.Plain["version"],
+		Record:        secretRecord,
+		NamespaceId:   groupID,
+		OwnerUsername: ownerUsername,
+		// RealmName: c.RealmName,
+	}
+	if secret.SecretType == "File" {
+		secret.FileName = secretRecord.Metadata.Plain["fileName"]
+	} else {
+		secret.SecretValue = secretRecord.Data["secretValue"]
+	}
+	return secret
 }
