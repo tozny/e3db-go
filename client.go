@@ -64,17 +64,6 @@ const (
 )
 
 var (
-	REQUIRED_CLIENT_KEYS = []string{
-		"version",
-		"public_signing_key",
-		"private_signing_key",
-		"client_id",
-		"api_key_id",
-		"api_secret",
-		"public_key",
-		"private_key",
-		"api_url",
-	}
 	encryptedFileName = "encrypted"
 	SECRET_TYPES      = []string{"Client", "Credential", "File"}
 )
