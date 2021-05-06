@@ -54,6 +54,11 @@ const (
 	SECRET_SHARED_METADATA_KEY          = "shared"
 	SECRET_FILE_SIZE_METADATA_KEY       = "size"
 	SECRET_FILENAME_METADATA_KEY        = "fileName"
+	SECRET_TYPE_METADATA_KEY            = "secretType"
+	SECRET_DESCRIPTION_METADATA_KEY     = "description"
+	SECRET_NAME_METADATA_KEY            = "secretName"
+	SECRET_VERSION_METADATA_KEY         = "version"
+	SECRET_VALUE_DATA_KEY               = "secretValue"
 )
 
 var (
@@ -1582,7 +1587,14 @@ func (c *ToznySDKV3) ShareRecordWithGroup(ctx context.Context, recordType string
 	if err != nil {
 		return err
 	}
-	wrappedAK, err := EncryptAccessKeyForGroup(*c.StorageClient, keyResp)
+	encryptionKeys := e3dbClients.EncryptionKeys{
+		Public: e3dbClients.Key{
+			Type:     e3dbClients.DefaultEncryptionKeyType,
+			Material: c.StorageClient.EncryptionKeys.Public.Material,
+		},
+		Private: c.StorageClient.EncryptionKeys.Private,
+	}
+	wrappedAK, err := e3dbClients.EncryptAccessKey(keyResp, encryptionKeys)
 	if err != nil {
 		return err
 	}
@@ -1713,23 +1725,6 @@ func ValidateSecret(secret CreateSecretOptions) error {
 	return nil
 }
 
-// EncryptAccessKeyForGroup encrypts the access key and returns the result
-func EncryptAccessKeyForGroup(member storageClient.StorageClient, ak e3dbClients.SymmetricKey) (string, error) {
-	encryptionKeys := e3dbClients.EncryptionKeys{
-		Public: e3dbClients.Key{
-			Type:     e3dbClients.DefaultEncryptionKeyType,
-			Material: member.EncryptionKeys.Public.Material,
-		},
-		Private: member.EncryptionKeys.Private,
-	}
-	eak, eakN, err := e3dbClients.BoxEncryptToBase64(ak[:], encryptionKeys)
-	if err != nil {
-		return "", err
-	}
-	wrappedAccessKey := fmt.Sprintf("%s.%s", eak, eakN)
-	return wrappedAccessKey, nil
-}
-
 // SliceContainsString checks if str is present in an array of strings
 func SliceContainsString(list []string, str string) bool {
 	for _, v := range list {
@@ -1738,6 +1733,26 @@ func SliceContainsString(list []string, str string) bool {
 		}
 	}
 	return false
+}
+
+type ConfigRoot struct {
+	APIBaseURL  string `json:"api_url"`
+	APIKeyID    string `json:"api_key_id"`
+	APISecret   string `json:"api_secret"`
+	ClientID    string `json:"client_id"`
+	ClientEmail string `json:"client_email"`
+	PublicKey   string `json:"public_key"`
+	PrivateKey  string `json:"private_key"`
+}
+
+type ConfigVersionString struct {
+	ConfigRoot
+	Version string `json:"version"`
+}
+
+type ConfigVersionInt struct {
+	ConfigRoot
+	Version int `json:"version"`
 }
 
 // VerifyRawClientCredentials ensures that client credentials are in the proper form and contain all required keys
@@ -1779,16 +1794,16 @@ func VerifyRawClientCredentials(credential string) error {
 	if !matched {
 		return errors.New("Value for client_id should be in UUID format")
 	}
-	if len(keys["public_signing_key"]) != e3dbClients.PublicSigningKeyLength {
+	if len(keys["public_signing_key"]) != e3dbClients.Base64EncodedPublicSigningKeyLength {
 		return errors.New("Invalid key length: public_signing_key")
 	}
-	if len(keys["private_signing_key"]) != e3dbClients.PrivateSigningKeyLength {
+	if len(keys["private_signing_key"]) != e3dbClients.Base64EncodedPrivateSigningKeyLength {
 		return errors.New("Invalid key length: private_signing_key")
 	}
-	if len(keys["public_key"]) != e3dbClients.PublicEncryptionKeyLength {
+	if len(keys["public_key"]) != e3dbClients.Base64EncodedPublicEncryptionKeyLength {
 		return errors.New("Invalid key length: public_key")
 	}
-	if len(keys["private_key"]) != e3dbClients.PrivateEncryptionKeyLength {
+	if len(keys["private_key"]) != e3dbClients.Base64EncodedPrivateEncryptionKeyLength {
 		return errors.New("Invalid key length: private_key")
 	}
 	return nil
@@ -1936,20 +1951,20 @@ func (c *ToznySDKV3) DecryptTextSecret(ctx context.Context, secret *pdsClient.Li
 // MakeSecretResponse makes a secret containing from the record, group, and owner info
 func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID string, ownerUsername string) *Secret {
 	secret := &Secret{
-		SecretName:    secretRecord.Metadata.Plain["secretName"],
-		SecretType:    secretRecord.Metadata.Plain["secretType"],
+		SecretName:    secretRecord.Metadata.Plain[SECRET_NAME_METADATA_KEY],
+		SecretType:    secretRecord.Metadata.Plain[SECRET_TYPE_METADATA_KEY],
 		SecretID:      secretRecord.Metadata.RecordID,
-		Description:   secretRecord.Metadata.Plain["description"],
-		Version:       secretRecord.Metadata.Plain["version"],
+		Description:   secretRecord.Metadata.Plain[SECRET_DESCRIPTION_METADATA_KEY],
+		Version:       secretRecord.Metadata.Plain[SECRET_VERSION_METADATA_KEY],
 		Record:        secretRecord,
 		NamespaceId:   groupID,
 		OwnerUsername: ownerUsername,
 		// RealmName: c.RealmName,
 	}
 	if secret.SecretType == "File" {
-		secret.FileName = secretRecord.Metadata.Plain["fileName"]
+		secret.FileName = secretRecord.Metadata.Plain[SECRET_FILENAME_METADATA_KEY]
 	} else {
-		secret.SecretValue = secretRecord.Data["secretValue"]
+		secret.SecretValue = secretRecord.Data[SECRET_VALUE_DATA_KEY]
 	}
 	return secret
 }
