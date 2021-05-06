@@ -32,7 +32,9 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1735,76 +1737,56 @@ func SliceContainsString(list []string, str string) bool {
 	return false
 }
 
-type ConfigRoot struct {
-	APIBaseURL  string `json:"api_url"`
-	APIKeyID    string `json:"api_key_id"`
-	APISecret   string `json:"api_secret"`
-	ClientID    string `json:"client_id"`
-	ClientEmail string `json:"client_email"`
-	PublicKey   string `json:"public_key"`
-	PrivateKey  string `json:"private_key"`
-}
-
-type ConfigVersionString struct {
-	ConfigRoot
-	Version string `json:"version"`
-}
-
-type ConfigVersionInt struct {
-	ConfigRoot
-	Version int `json:"version"`
+type ClientConfigRoot struct {
+	APIBaseURL        string      `json:"api_url"`
+	APIKeyID          string      `json:"api_key_id"`
+	APISecret         string      `json:"api_secret"`
+	ClientID          string      `json:"client_id"`
+	ClientEmail       string      `json:"client_email"`
+	PublicKey         string      `json:"public_key"`
+	PrivateKey        string      `json:"private_key"`
+	PublicSigningKey  string      `json:"public_signing_key"`
+	PrivateSigningKey string      `json:"private_signing_key"`
+	Version           interface{} `json:"version"`
 }
 
 // VerifyRawClientCredentials ensures that client credentials are in the proper form and contain all required keys
 func VerifyRawClientCredentials(credential string) error {
-	cred := strings.Split(credential, "{")
-	if len(cred) != 2 {
-		return errors.New("incorrect format")
+	var clientConfig ClientConfigRoot
+	err := json.Unmarshal([]byte(credential), &clientConfig)
+	if err != nil {
+		return err
 	}
-	cred = strings.Split(cred[1], "}")
-	if len(cred) != 2 {
-		return errors.New("incorrect format")
-	}
-	cred = strings.Split(cred[0], ",")
-	var keys = make(map[string]string)
-	for _, line := range cred {
-		vals := strings.Split(line, ":")
-		key := vals[0]
-		key = strings.Split(key, "\"")[1]
-		key = strings.TrimSpace(key)
-		value := strings.Join(vals[1:], "")
-		value = strings.Split(value, "\"")[1]
-		value = strings.TrimSpace(value)
-		keys[key] = value
-	}
-	for _, reqKey := range REQUIRED_CLIENT_KEYS {
-		value, ok := keys[reqKey]
-		if ok {
-			if value == "" {
-				return fmt.Errorf("Value for %s must be non-empty", reqKey)
-			}
-		} else {
-			return fmt.Errorf("Key %s must be in client credential", reqKey)
+	values := reflect.ValueOf(clientConfig)
+	keys := values.Type()
+	for index := 0; index < values.NumField(); index++ {
+		if keys.Field(index).Name != "ClientEmail" && values.Field(index).Interface() == "" {
+			return fmt.Errorf("Value for %s must be non-empty", keys.Field(index).Tag.Get("json"))
 		}
 	}
-	matched, err := regexp.MatchString(`^[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$`, keys["client_id"])
-	if err != nil {
-		return fmt.Errorf("regex error: %s occurred", err)
+	// Check that the version is either an integer or a string containing a number
+	_, versionInt := clientConfig.Version.(int)
+	_, err = strconv.Atoi(fmt.Sprintf("%v", clientConfig.Version))
+	if !versionInt && err != nil {
+		return errors.New("Value for version must be a number")
 	}
-	if !matched {
+	// ClientID must be a UUID
+	_, err = uuid.Parse(clientConfig.ClientID)
+	if err != nil {
 		return errors.New("Value for client_id should be in UUID format")
 	}
-	if len(keys["public_signing_key"]) != e3dbClients.Base64EncodedPublicSigningKeyLength {
-		return errors.New("Invalid key length: public_signing_key")
-	}
-	if len(keys["private_signing_key"]) != e3dbClients.Base64EncodedPrivateSigningKeyLength {
+	// Base64 encoded keys must have correct lengths
+	if len(clientConfig.PrivateSigningKey) != e3dbClients.Base64EncodedPrivateSigningKeyLength {
 		return errors.New("Invalid key length: private_signing_key")
 	}
-	if len(keys["public_key"]) != e3dbClients.Base64EncodedPublicEncryptionKeyLength {
-		return errors.New("Invalid key length: public_key")
+	if len(clientConfig.PublicSigningKey) != e3dbClients.Base64EncodedPublicSigningKeyLength {
+		return errors.New("Invalid key length: public_signing_key")
 	}
-	if len(keys["private_key"]) != e3dbClients.Base64EncodedPrivateEncryptionKeyLength {
+	if len(clientConfig.PrivateKey) != e3dbClients.Base64EncodedSymmetricKeyLength {
 		return errors.New("Invalid key length: private_key")
+	}
+	if len(clientConfig.PublicKey) != e3dbClients.Base64EncodedSymmetricKeyLength {
+		return errors.New("Invalid key length: public_key")
 	}
 	return nil
 }

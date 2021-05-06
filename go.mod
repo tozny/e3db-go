@@ -2,8 +2,6 @@ module github.com/tozny/e3db-go/v2
 
 go 1.15
 
-replace github.com/tozny/e3db-clients-go => /Users/alannahcarr/code/e3db-clients-go
-
 require (
 	github.com/google/uuid v1.1.0
 	github.com/jawher/mow.cli v1.0.4
