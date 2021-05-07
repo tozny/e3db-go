@@ -1,8 +1,10 @@
 package e3db
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"testing"
 
@@ -17,6 +19,7 @@ var (
 	baseURL           = os.Getenv("TEST_IDENTITY_API_URL")
 	testCtx           = context.Background()
 	plaintextFileName = "plainfile"
+	decryptedFileName = "decrypted"
 )
 
 func TestCreateAndListSecrets(t *testing.T) {
@@ -172,18 +175,18 @@ func TestCreateAndViewSecretSucceeds(t *testing.T) {
 		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
 	}
 	viewOptions := ViewSecretOptions{
-		SecretID: secretCreated.Record.Metadata.RecordID,
+		SecretID: secretCreated.SecretID,
 	}
 	secretView, err := sdk.ViewSecret(testCtx, viewOptions)
 	if err != nil {
 		t.Fatalf("Could not view secret: Err: %+v", err)
 	}
-	if secretReq.SecretValue != secretView.Record.Data["secretValue"] {
+	if secretReq.SecretValue != secretView.SecretValue {
 		t.Fatalf("SecretValue doesn't match. Created: %s Viewed: %s", secretCreated.Record.Data["secretValue"], secretView.Record.Data["secretValue"])
 	}
 }
 
-func TestCreateAndViewFileSecretSucceeds(t *testing.T) {
+func TestCreateAndReadFileSecretSucceeds(t *testing.T) {
 	request := TozIDLoginRequest{
 		Username:     username,
 		Password:     password,
@@ -213,14 +216,40 @@ func TestCreateAndViewFileSecretSucceeds(t *testing.T) {
 	secretReq := CreateSecretOptions{
 		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
 		SecretType:  "File",
-		SecretValue: "",
 		Description: "a file test",
 		FileName:    plaintextFileName,
 		RealmName:   realmName,
 	}
-	_, err = sdk.CreateSecret(testCtx, secretReq)
+	createdSecret, err := sdk.CreateSecret(testCtx, secretReq)
 	if err != nil {
 		t.Fatalf("Could not create secret: Req: %+v  Err: %+v", secretReq, err)
+	}
+	readFileOptions := ReadFileOptions{
+		RecordID:         createdSecret.SecretID,
+		DownloadFileName: decryptedFileName,
+	}
+	err = sdk.ReadFile(testCtx, readFileOptions)
+	if err != nil {
+		t.Fatalf("Could not read file: Err: %+v", err)
+	}
+	defer func() {
+		err := os.Remove(decryptedFileName)
+		if err != nil {
+			t.Logf("Could not delete %s: %+v", decryptedFileName, err)
+		}
+	}()
+	// Compare plaintext and decrypted file contents
+	plaintext, err := ioutil.ReadFile(plaintextFileName)
+	if err != nil {
+		t.Fatalf("Could not read %s file: %+v", plaintextFileName, err)
+	}
+	decrypted, err := ioutil.ReadFile(decryptedFileName)
+	if err != nil {
+		t.Fatalf("Could not read %s file: %+v", decryptedFileName, err)
+	}
+	compare := bytes.Equal(plaintext, decrypted)
+	if !compare {
+		t.Fatalf("%s and %s files do not match", plaintextFileName, decryptedFileName)
 	}
 }
 

@@ -51,6 +51,7 @@ import (
 const (
 	DefaultStorageURL               = "https://api.e3db.com"
 	DefaultEncryptedFileName        = "encrypted"
+	DefaultDownloadedFileName       = "downloaded"
 	SecretUUID                      = "38bb737a-4ce0-5ead-8585-e13ea23b09a6"
 	SecretWriterUsernameMetadataKey = "username"
 	SecretSharedMetadataKey         = "shared"
@@ -1446,7 +1447,12 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOption
 	}
 	var createdRecord *pdsClient.Record
 	if secret.SecretType == "File" {
-		createdRecord, err = c.WriteFile(ctx, recordType, plain, secret.FileName)
+		writeFileRequest := WriteFileOptions{
+			RecordType: recordType,
+			Plain:      plain,
+			FileName:   secret.FileName,
+		}
+		createdRecord, err = c.WriteFile(ctx, writeFileRequest)
 		if err != nil {
 			return nil, err
 		}
@@ -1465,43 +1471,49 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOption
 	return createdSecret, nil
 }
 
+type WriteFileOptions struct {
+	RecordType string
+	Plain      map[string]string
+	FileName   string
+}
+
 // WriteFile encrypts the file with specified fileName and uploads it, creating a new record in E3DB
-func (c *ToznySDKV3) WriteFile(ctx context.Context, recordType string, plain map[string]string, fileName string) (*pdsClient.Record, error) {
+func (c *ToznySDKV3) WriteFile(ctx context.Context, options WriteFileOptions) (*pdsClient.Record, error) {
 	keyRequest := pdsClient.GetOrCreateAccessKeyRequest{
 		WriterID:   c.E3dbPDSClient.ClientID,
 		UserID:     c.E3dbPDSClient.ClientID,
 		ReaderID:   c.E3dbPDSClient.ClientID,
-		RecordType: recordType,
+		RecordType: options.RecordType,
 	}
 	ak, err := c.E3dbPDSClient.GetOrCreateAccessKey(ctx, keyRequest)
 	if err != nil {
 		return nil, err
 	}
 	// Encrypt the file
-	size, checksum, err := e3dbClients.EncryptFile(fileName, DefaultEncryptedFileName, ak)
+	size, checksum, err := e3dbClients.EncryptFile(options.FileName, DefaultEncryptedFileName, ak)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		err := os.Remove(DefaultEncryptedFileName)
 		if err != nil {
-			fmt.Println("CreateSecret: error deleting encrypted file")
+			fmt.Printf("CreatedSecret: Could not delete %s: %+v", DefaultEncryptedFileName, err)
 		}
 	}()
-	plain[SecretFilenameMetadataKey] = fileName
+	options.Plain[SecretFilenameMetadataKey] = options.FileName
 	sizeKB := size / 1024
 	if sizeKB >= 1 {
-		plain[SecretFileSizeMetadataKey] = fmt.Sprintf("%d", sizeKB)
+		options.Plain[SecretFileSizeMetadataKey] = fmt.Sprintf("%d", sizeKB)
 	} else {
-		plain[SecretFileSizeMetadataKey] = "< 1"
+		options.Plain[SecretFileSizeMetadataKey] = "< 1"
 	}
 	// Write the whole file
 	recordToWrite := storageClient.Record{
 		Metadata: storageClient.Meta{
-			Type:     recordType,
+			Type:     options.RecordType,
 			WriterID: uuid.MustParse(c.StorageClient.ClientID),
 			UserID:   uuid.MustParse(c.StorageClient.ClientID),
-			Plain:    plain,
+			Plain:    options.Plain,
 			FileMeta: &storageClient.FileMeta{
 				Size:        int64(size),
 				Checksum:    checksum,
@@ -1545,6 +1557,53 @@ func (c *ToznySDKV3) WriteFile(ctx context.Context, recordType string, plain map
 		RecordSignature: response.RecordSignature,
 	}
 	return fileRecord, nil
+}
+
+type ReadFileOptions struct {
+	RecordID         string
+	DownloadFileName string
+}
+
+// ReadFile downloads and decrypts the file from the record
+func (c *ToznySDKV3) ReadFile(ctx context.Context, options ReadFileOptions) error {
+	secretUUID, err := uuid.Parse(options.RecordID)
+	if err != nil {
+		return err
+	}
+	fileResp, err := c.E3dbPDSClient.GetFileRecord(ctx, secretUUID)
+	if err != nil {
+		return err
+	}
+	fileURL := fileResp.Metadata.FileMeta.FileURL
+	downloadRequest := file.DownloadRequest{
+		URL:               fileURL,
+		EncryptedFileName: DefaultDownloadedFileName,
+	}
+	downloadResponse, err := file.DownloadFile(downloadRequest)
+	if err != nil || downloadResponse != "" {
+		return fmt.Errorf("ReadFile: Err: %+v  Resp: %+v", err, downloadResponse)
+	}
+	defer func() {
+		err := os.Remove(DefaultDownloadedFileName)
+		if err != nil {
+			fmt.Printf("ReadFile: Could not delete %s: %+v", DefaultDownloadedFileName, err)
+		}
+	}()
+	keyRequest := pdsClient.GetOrCreateAccessKeyRequest{
+		WriterID:   c.E3dbPDSClient.ClientID,
+		UserID:     c.E3dbPDSClient.ClientID,
+		ReaderID:   c.E3dbPDSClient.ClientID,
+		RecordType: fileResp.Metadata.Type,
+	}
+	ak, err := c.E3dbPDSClient.GetOrCreateAccessKey(ctx, keyRequest)
+	if err != nil {
+		return err
+	}
+	err = e3dbClients.DecryptFile(DefaultDownloadedFileName, options.DownloadFileName, ak)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // WriteRecord encrypts the data for the record and creates a new record in E3DB
