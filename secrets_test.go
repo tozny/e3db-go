@@ -11,10 +11,10 @@ import (
 )
 
 var (
-	realmName         = os.Getenv("ID_REALM_NAME")
-	username          = os.Getenv("USERNAME")
-	password          = os.Getenv("PASSWORD")
-	baseURL           = os.Getenv("API_URL")
+	realmName         = os.Getenv("TEST_IDENTITY_REALM_NAME")
+	username          = os.Getenv("TEST_IDENTITY_USERNAME")
+	password          = os.Getenv("TEST_IDENTITY_PASSWORD")
+	baseURL           = os.Getenv("TEST_IDENTITY_API_URL")
 	testCtx           = context.Background()
 	plaintextFileName = "plainfile"
 )
