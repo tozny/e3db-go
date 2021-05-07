@@ -90,6 +90,17 @@ func TestCreateAndListSecrets(t *testing.T) {
 }
 
 func TestInvalidCredSecretFails(t *testing.T) {
+	request := TozIDLoginRequest{
+		Username:     username,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
 	invalidClient := `{
 		"version": "2",
 		"public_signing_key": "A5QX5dBN_IOhjGoUBtT-xuVmqRXDB2uaqiKuTao",
@@ -102,17 +113,6 @@ func TestInvalidCredSecretFails(t *testing.T) {
 		"api_url": "http://platform.local.tozny.com:8000",
 		"client_email": ""
 	}`
-	request := TozIDLoginRequest{
-		Username:     username,
-		Password:     password,
-		RealmName:    realmName,
-		APIBaseURL:   baseURL,
-		LoginHandler: mfaHandler,
-	}
-	sdk, err := GetSDKV3ForTozIDUser(request)
-	if err != nil {
-		t.Fatalf("Could not log in %+v", err)
-	}
 	secretReq := CreateSecretOptions{
 		SecretName:  fmt.Sprintf("cred-%s", uuid.New().String()),
 		SecretType:  "Client",
@@ -121,8 +121,30 @@ func TestInvalidCredSecretFails(t *testing.T) {
 		RealmName:   realmName,
 	}
 	_, err = sdk.CreateSecret(testCtx, secretReq)
-	if err.Error() != "Invalid key length: public_signing_key" {
-		t.Fatalf("Secret creation should have failed. Err: %v", err)
+	if err == nil {
+		t.Fatal("Secret creation should have failed.")
+	}
+	invalidClient = `{
+		"version": "2",
+		"public_signing_key": "A5QX5dBN_IOhjGoUBtT-xuVmqRXDB2uaqiKuTao",
+		"private_signing_key": "qIqG9_81kd2gOY-yggIpahQG1MDnlBeQj7G4MHa5p0E1WapQxLVlyU6hXA6rp-Ci5DFf8g6GMaqy5t_H1g5Nqg",
+		"client_id": "4f20ca95-1b3b-b78f-b5bd-6d469ac804eb",
+		"api_key_id": "63807026e9a23850307429e52d2f607eaa5be43488cbb819b075ade91735b180",
+		"api_secret": "730e6b18dc9668fe1758304283c73060619f6596f11bf42bdd3f16d6fc6cd6d0",
+		"public_key": "6u73qLgJniPi9S2t99A7lNfvi3xjxMsPB_Z-CEGWZmo",
+		"private_key": "BnBt9_tquBvSAHL04bQm0HkQ7eXtvuj1WSHegQeho6E",
+		"client_email": ""
+	}`
+	secretReq = CreateSecretOptions{
+		SecretName:  fmt.Sprintf("cred-%s", uuid.New().String()),
+		SecretType:  "Client",
+		SecretValue: invalidClient,
+		Description: "a client cred test",
+		RealmName:   realmName,
+	}
+	_, err = sdk.CreateSecret(testCtx, secretReq)
+	if err == nil {
+		t.Fatal("Secret creation should have failed.")
 	}
 }
 
@@ -200,4 +222,13 @@ func TestCreateAndViewFileSecretSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not create secret: Req: %+v  Err: %+v", secretReq, err)
 	}
+}
+
+func mfaHandler(sessionResponse *IdentitySessionIntermediateResponse) (LoginActionData, error) {
+	if sessionResponse.LoginActionType == "login-totp" {
+		totpValue := make(map[string]string)
+		totpValue["otp"] = ""
+		return totpValue, nil
+	}
+	return nil, fmt.Errorf("mfaHandler cannot support \"%s\" action types", sessionResponse.LoginActionType)
 }
