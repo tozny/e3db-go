@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jawher/mow.cli"
+	cli "github.com/jawher/mow.cli"
 	"github.com/tozny/e3db-go/v2"
 	"golang.org/x/crypto/nacl/box"
 )

@@ -31,11 +31,15 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
+	"github.com/tozny/e3db-clients-go/file"
 	"github.com/tozny/e3db-clients-go/identityClient"
 	"github.com/tozny/e3db-clients-go/pdsClient"
 	"github.com/tozny/e3db-clients-go/storageClient"
@@ -44,7 +48,24 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 )
 
-const defaultStorageURL = "https://api.e3db.com"
+const (
+	DefaultStorageURL               = "https://api.e3db.com"
+	DefaultEncryptedFileName        = "encrypted"
+	SecretUUID                      = "38bb737a-4ce0-5ead-8585-e13ea23b09a6"
+	SecretWriterUsernameMetadataKey = "username"
+	SecretSharedMetadataKey         = "shared"
+	SecretFileSizeMetadataKey       = "size"
+	SecretFilenameMetadataKey       = "fileName"
+	SecretTypeMetadataKey           = "secretType"
+	SecretDescriptionMetadataKey    = "description"
+	SecretNameMetadataKey           = "secretName"
+	SecretVersionMetadataKey        = "version"
+	SecretValueDataKey              = "secretValue"
+)
+
+var (
+	SecretTypes = []string{"Client", "Credential", "File"}
+)
 
 type akCacheKey struct {
 	WriterID string
@@ -153,7 +174,7 @@ func GetClient(opts ClientOpts) (*Client, error) {
 // RegisterClient creates a new client for a given InnoVault account
 func RegisterClient(registrationToken string, clientName string, publicKey string, privateKey string, backup bool, apiURL string) (*ClientDetails, string, error) {
 	if apiURL == "" {
-		apiURL = defaultStorageURL
+		apiURL = DefaultStorageURL
 	}
 
 	request := &clientRegistrationRequest{
@@ -222,7 +243,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 
 func (c *Client) apiURL() string {
 	if c.Options.APIBaseURL == "" {
-		return defaultStorageURL
+		return DefaultStorageURL
 	}
 
 	return strings.TrimRight(c.Options.APIBaseURL, "/")
@@ -742,9 +763,9 @@ type IdentitySessionIntermediateResponse = identityClient.IdentitySessionRequest
 
 // TozIDLoginRequest is used to login to a TozID account to get a ToznySDKV3 or active TozID session (future plan)
 type TozIDLoginRequest struct {
-	Username  string
-	Password  string
-	RealmName string
+	Username     string
+	Password     string
+	RealmName    string
 	APIBaseURL   string
 	LoginHandler func(response *IdentitySessionIntermediateResponse) (LoginActionData, error)
 }
@@ -950,7 +971,7 @@ func (c *ToznySDKV3) StoreConfigFile(path string) error {
 // Register attempts to create a valid TozStore account returning the root client config for the created account and error (if any).
 func (c *ToznySDKV3) Register(ctx context.Context, name string, email string, password string, apiURL string) (RegisterAccountResponse, error) {
 	if apiURL == "" {
-		apiURL = defaultStorageURL
+		apiURL = DefaultStorageURL
 	}
 	const (
 		pwEncSalt  = "pwEncSalt"
@@ -1374,4 +1395,575 @@ func (c *ToznySDKV3) UnbrokerShare(ctx context.Context, authorizerClientID strin
 		ReaderID:     readerClientID,
 		RecordType:   recordType,
 	})
+}
+
+type Secret struct {
+	SecretType    string
+	SecretName    string
+	SecretValue   string
+	Description   string
+	FileName      string
+	SecretID      string
+	RealmName     string
+	OwnerUsername string
+	NamespaceId   string
+	Version       string
+	Record        *pdsClient.Record
+}
+
+type CreateSecretOptions struct {
+	SecretType  string
+	SecretName  string
+	SecretValue string
+	Description string
+	FileName    string
+	RealmName   string
+}
+
+// CreateSecret makes a secret of the specified type and share it with a group containing the writer
+func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOptions) (*Secret, error) {
+	// once ToznySDKV3 is updated, this will be c.RealmName if secret.RealmName is empty
+	realmName := secret.RealmName
+	err := ValidateSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+	namespaceOptions := NamespaceOptions{
+		RealmName: realmName,
+		Namespace: c.StorageClient.ClientID,
+	}
+	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
+	if err != nil {
+		return nil, err
+	}
+	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, secret.SecretType, secret.SecretName)
+	timestamp := time.Now().String()
+	plain := map[string]string{
+		"secretType":  secret.SecretType,
+		"secretName":  secret.SecretName,
+		"description": secret.Description,
+		"version":     timestamp,
+	}
+	var createdRecord *pdsClient.Record
+	if secret.SecretType == "File" {
+		createdRecord, err = c.WriteFile(ctx, recordType, plain, secret.FileName)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		data := map[string]string{"secretValue": secret.SecretValue}
+		createdRecord, err = c.WriteRecord(ctx, data, recordType, plain)
+		if err != nil {
+			return nil, err
+		}
+	}
+	createdSecret := c.MakeSecretResponse(createdRecord, group.GroupID.String(), "")
+	err = c.ShareRecordWithGroup(ctx, recordType, group)
+	if err != nil {
+		return nil, err
+	}
+	return createdSecret, nil
+}
+
+// WriteFile encrypts the file with specified fileName and uploads it, creating a new record in E3DB
+func (c *ToznySDKV3) WriteFile(ctx context.Context, recordType string, plain map[string]string, fileName string) (*pdsClient.Record, error) {
+	keyRequest := pdsClient.GetOrCreateAccessKeyRequest{
+		WriterID:   c.E3dbPDSClient.ClientID,
+		UserID:     c.E3dbPDSClient.ClientID,
+		ReaderID:   c.E3dbPDSClient.ClientID,
+		RecordType: recordType,
+	}
+	ak, err := c.E3dbPDSClient.GetOrCreateAccessKey(ctx, keyRequest)
+	if err != nil {
+		return nil, err
+	}
+	// Encrypt the file
+	size, checksum, err := e3dbClients.EncryptFile(fileName, DefaultEncryptedFileName, ak)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err := os.Remove(DefaultEncryptedFileName)
+		if err != nil {
+			fmt.Println("CreateSecret: error deleting encrypted file")
+		}
+	}()
+	plain[SecretFilenameMetadataKey] = fileName
+	sizeKB := size / 1024
+	if sizeKB >= 1 {
+		plain[SecretFileSizeMetadataKey] = fmt.Sprintf("%d", sizeKB)
+	} else {
+		plain[SecretFileSizeMetadataKey] = "< 1"
+	}
+	// Write the whole file
+	recordToWrite := storageClient.Record{
+		Metadata: storageClient.Meta{
+			Type:     recordType,
+			WriterID: uuid.MustParse(c.StorageClient.ClientID),
+			UserID:   uuid.MustParse(c.StorageClient.ClientID),
+			Plain:    plain,
+			FileMeta: &storageClient.FileMeta{
+				Size:        int64(size),
+				Checksum:    checksum,
+				Compression: "raw",
+			},
+		},
+	}
+	pendingFileURL, err := c.StorageClient.WriteFile(ctx, recordToWrite)
+	if err != nil {
+		return nil, err
+	}
+	uploadRequest := file.UploadRequest{
+		URL:               pendingFileURL.FileURL,
+		EncryptedFileName: DefaultEncryptedFileName,
+		Checksum:          checksum,
+		Size:              size,
+	}
+	uploadResp, err := file.UploadFile(uploadRequest)
+	if err != nil || uploadResp != 0 {
+		return nil, err
+	}
+	// Register the file as being written
+	response, err := c.StorageClient.FileCommit(ctx, pendingFileURL.PendingFileID)
+	if err != nil {
+		return nil, err
+	}
+	// get the file from the record
+	fileRecord := &pdsClient.Record{
+		Metadata: pdsClient.Meta{
+			RecordID:     response.Metadata.RecordID.String(),
+			WriterID:     response.Metadata.WriterID.String(),
+			UserID:       response.Metadata.UserID.String(),
+			Type:         response.Metadata.Type,
+			Plain:        response.Metadata.Plain,
+			Created:      response.Metadata.Created,
+			LastModified: response.Metadata.LastModified,
+			Version:      response.Metadata.Version.String(),
+			FileMeta:     (*pdsClient.FileMeta)(response.Metadata.FileMeta),
+		},
+		Data:            response.Data,
+		RecordSignature: response.RecordSignature,
+	}
+	return fileRecord, nil
+}
+
+// WriteRecord encrypts the data for the record and creates a new record in E3DB
+func (c *ToznySDKV3) WriteRecord(ctx context.Context, data map[string]string, recordType string, plain map[string]string) (*pdsClient.Record, error) {
+	recordToWrite := pdsClient.WriteRecordRequest{
+		Data: data,
+		Metadata: pdsClient.Meta{
+			Type:     recordType,
+			WriterID: c.E3dbPDSClient.ClientID,
+			UserID:   c.E3dbPDSClient.ClientID,
+			Plain:    plain,
+		},
+	}
+	encryptedRecord, err := c.E3dbPDSClient.EncryptRecord(ctx, recordToWrite)
+	if err != nil {
+		return nil, err
+	}
+	record, err := c.E3dbPDSClient.WriteRecord(ctx, encryptedRecord)
+	if err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+func (c *ToznySDKV3) ShareRecordWithGroup(ctx context.Context, recordType string, group *storageClient.Group) error {
+	keyRequest := pdsClient.GetOrCreateAccessKeyRequest{
+		WriterID:   c.E3dbPDSClient.ClientID,
+		UserID:     c.E3dbPDSClient.ClientID,
+		ReaderID:   c.E3dbPDSClient.ClientID,
+		RecordType: recordType,
+	}
+	keyResp, err := c.E3dbPDSClient.GetOrCreateAccessKey(ctx, keyRequest)
+	if err != nil {
+		return err
+	}
+	encryptionKeys := e3dbClients.EncryptionKeys{
+		Public: e3dbClients.Key{
+			Type:     e3dbClients.DefaultEncryptionKeyType,
+			Material: c.StorageClient.EncryptionKeys.Public.Material,
+		},
+		Private: c.StorageClient.EncryptionKeys.Private,
+	}
+	wrappedAK, err := e3dbClients.EncryptAccessKey(keyResp, encryptionKeys)
+	if err != nil {
+		return err
+	}
+	accessKeyRequest := storageClient.GroupAccessKeyRequest{
+		GroupID:            group.GroupID,
+		RecordType:         recordType,
+		EncryptedAccessKey: wrappedAK,
+		PublicKey:          group.PublicKey,
+	}
+	_, encryptedGroupAK, err := c.StorageClient.CreateGroupAccessKey(ctx, accessKeyRequest)
+	if err != nil {
+		return err
+	}
+	// share secret with group
+	secretShareRequest := storageClient.ShareGroupRecordRequest{
+		GroupID:            group.GroupID,
+		RecordType:         recordType,
+		EncryptedAccessKey: encryptedGroupAK,
+		PublicKey:          group.PublicKey,
+	}
+	_, err = c.StorageClient.ShareRecordWithGroup(ctx, secretShareRequest)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type NamespaceOptions struct {
+	Namespace string
+	RealmName string
+}
+
+// GetOrCreateNamespace creates the group for the namespace if it doesn't exist and returns the Group
+func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, options NamespaceOptions /*realmName string, namespace string*/) (*storageClient.Group, error) {
+	var group *storageClient.Group
+	groupName := fmt.Sprintf("tozny.secret.%s.%s", options.RealmName, options.Namespace)
+	listRequest := storageClient.ListGroupsRequest{
+		ClientID:   uuid.MustParse(c.StorageClient.ClientID),
+		GroupNames: []string{groupName},
+	}
+	responseList, err := c.StorageClient.ListGroups(ctx, listRequest)
+	if err != nil {
+		return nil, err
+	}
+	encryptionKeyPair, err := e3dbClients.GenerateKeyPair()
+	if err != nil {
+		return nil, err
+	}
+	eak, err := e3dbClients.EncryptPrivateKey(encryptionKeyPair.Private, c.StorageClient.EncryptionKeys)
+	if err != nil {
+		return nil, err
+	}
+	if len(responseList.Groups) < 1 {
+		// create group
+		groupRequest := storageClient.CreateGroupRequest{
+			Name:              groupName,
+			PublicKey:         encryptionKeyPair.Public.Material,
+			EncryptedGroupKey: eak,
+		}
+		createGroupResponse, err := c.StorageClient.CreateGroup(ctx, groupRequest)
+		if err != nil {
+			return nil, err
+		}
+		group = createGroupResponse
+		// get membership keys
+		membershipKeyRequest := storageClient.CreateMembershipKeyRequest{
+			GroupAdminID:      c.StorageClient.ClientID,
+			NewMemberID:       c.StorageClient.ClientID,
+			EncryptedGroupKey: createGroupResponse.EncryptedGroupKey,
+			ShareePublicKey:   c.StorageClient.EncryptionKeys.Public.Material,
+		}
+		membershipKeyResp, err := c.StorageClient.CreateGroupMembershipKey(ctx, membershipKeyRequest)
+		if err != nil {
+			return nil, err
+		}
+		// make the capabilities
+		groupMemberCapabilities := []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
+		// make a new member
+		memberRequest := []storageClient.GroupMember{}
+		memberRequest = append(memberRequest, storageClient.GroupMember{
+			ClientID:        uuid.MustParse(c.StorageClient.ClientID),
+			MembershipKey:   membershipKeyResp,
+			CapabilityNames: groupMemberCapabilities,
+		})
+		// add group members
+		addMemberRequest := storageClient.AddGroupMembersRequest{
+			GroupID:      createGroupResponse.GroupID,
+			GroupMembers: memberRequest,
+		}
+		_, err = c.StorageClient.AddGroupMembers(ctx, addMemberRequest)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// the group already exists
+		group = &responseList.Groups[0]
+	}
+	return group, nil
+}
+
+// ValidateSecret checks that the secret contains valid input for each entry
+func ValidateSecret(secret CreateSecretOptions) error {
+	secret.SecretName = strings.TrimSpace(secret.SecretName)
+	secret.SecretValue = strings.TrimSpace(secret.SecretValue)
+	if secret.SecretType == "" {
+		return errors.New("type cannot be empty")
+	}
+	if !SliceContainsString(SecretTypes, secret.SecretType) {
+		return errors.New("invalid type")
+	}
+	if secret.SecretName == "" {
+		return errors.New("name cannot be empty")
+	}
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9-_]{1,50}$`, secret.SecretName)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return errors.New("Secret name must contain 1-50 alphanumeric characters, -, or _")
+	}
+	if secret.SecretValue == "" && secret.SecretType == "Credential" {
+		return errors.New("Value cannot be empty")
+	}
+	if secret.SecretType == "File" && strings.TrimSpace(secret.SecretName) == "" {
+		return errors.New("File name cannot be empty")
+	}
+	if secret.SecretType == "Client" {
+		err := VerifyRawClientCredentials(secret.SecretValue)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SliceContainsString checks if str is present in an array of strings
+func SliceContainsString(list []string, str string) bool {
+	for _, v := range list {
+		if v == str {
+			return true
+		}
+	}
+	return false
+}
+
+type ClientConfigRoot struct {
+	APIBaseURL        string      `json:"api_url"`
+	APIKeyID          string      `json:"api_key_id"`
+	APISecret         string      `json:"api_secret"`
+	ClientID          string      `json:"client_id"`
+	ClientEmail       string      `json:"client_email"`
+	PublicKey         string      `json:"public_key"`
+	PrivateKey        string      `json:"private_key"`
+	PublicSigningKey  string      `json:"public_signing_key"`
+	PrivateSigningKey string      `json:"private_signing_key"`
+	Version           interface{} `json:"version"`
+}
+
+// VerifyRawClientCredentials ensures that client credentials are in the proper form and contain all required keys
+func VerifyRawClientCredentials(credential string) error {
+	var clientConfig ClientConfigRoot
+	err := json.Unmarshal([]byte(credential), &clientConfig)
+	if err != nil {
+		return err
+	}
+	// Check that all fields (except ClientEmail, optionally) are non-empty
+	if clientConfig.Version == "" {
+		return errors.New("Value for version must be non-empty")
+	}
+	if clientConfig.ClientID == "" {
+		return errors.New("Value for client_id must be non-empty")
+	}
+	if clientConfig.PrivateSigningKey == "" {
+		return errors.New("Value for private_signing_key must be non-empty")
+	}
+	if clientConfig.PublicSigningKey == "" {
+		return errors.New("Value for public_signing_key must be non-empty")
+	}
+	if clientConfig.PrivateKey == "" {
+		return errors.New("Value for private_key must be non-empty")
+	}
+	if clientConfig.PublicKey == "" {
+		return errors.New("Value for public_key must be non-empty")
+	}
+	if clientConfig.APIBaseURL == "" {
+		return errors.New("Value for api_url must be non-empty")
+	}
+	if clientConfig.APIKeyID == "" {
+		return errors.New("Value for api_key_id must be non-empty")
+	}
+	if clientConfig.APISecret == "" {
+		return errors.New("Value for api_secret must be non-empty")
+	}
+	_, versionInt := clientConfig.Version.(int)
+	_, err = strconv.Atoi(fmt.Sprintf("%v", clientConfig.Version))
+	if !versionInt && err != nil {
+		return errors.New("Value for version must be a number")
+	}
+	// ClientID must be a UUID
+	_, err = uuid.Parse(clientConfig.ClientID)
+	if err != nil {
+		return errors.New("Value for client_id should be in UUID format")
+	}
+	// Base64 encoded keys must have correct lengths
+	if len(clientConfig.PrivateSigningKey) != e3dbClients.Base64EncodedPrivateSigningKeyLength {
+		return fmt.Errorf("Invalid key length: private_signing_key Expected length: %d Received length: %d", e3dbClients.Base64EncodedPrivateSigningKeyLength, len(clientConfig.PrivateSigningKey))
+	}
+	if len(clientConfig.PublicSigningKey) != e3dbClients.Base64EncodedPublicSigningKeyLength {
+		return fmt.Errorf("Invalid key length: public_signing_key Expected length: %d Received length: %d", e3dbClients.Base64EncodedPublicSigningKeyLength, len(clientConfig.PublicSigningKey))
+	}
+	if len(clientConfig.PrivateKey) != e3dbClients.Base64EncodedSymmetricKeyLength {
+		return fmt.Errorf("Invalid key length: private_key Expected length: %d Received length: %d", e3dbClients.Base64EncodedSymmetricKeyLength, len(clientConfig.PrivateKey))
+	}
+	if len(clientConfig.PublicKey) != e3dbClients.Base64EncodedSymmetricKeyLength {
+		return fmt.Errorf("Invalid key length: public_key Expected length: %d Received length: %d", e3dbClients.Base64EncodedSymmetricKeyLength, len(clientConfig.PublicKey))
+	}
+	return nil
+}
+
+type ListedSecrets struct {
+	List      []Secret
+	NextToken string
+}
+
+type ListSecretsOptions struct {
+	RealmName string
+	Limit     int
+	NextToken int64
+}
+
+// ListSecrets returns a list of up to limit secrets that are shared with or owned by the identity
+func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions) (*ListedSecrets, error) {
+	sharedSecrets := &ListedSecrets{}
+	listRequest := storageClient.ListGroupsRequest{
+		ClientID:  uuid.MustParse(c.StorageClient.ClientID),
+		NextToken: options.NextToken,
+		Max:       options.Limit,
+	}
+	responseList, err := c.StorageClient.ListGroups(ctx, listRequest)
+	if err != nil {
+		return nil, err
+	}
+	if len(responseList.Groups) < 1 {
+		return sharedSecrets, nil
+	}
+	sharedSecretList := []Secret{}
+	sharedSecretIDs := make(map[string]bool)
+	for _, group := range responseList.Groups {
+		if !ValidToznySecretNamespace(group.Name) {
+			continue
+		}
+		listRequest := storageClient.ListGroupRecordsRequest{
+			GroupID: group.GroupID,
+		}
+		listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+		if err != nil {
+			return nil, err
+		}
+		// Add records shared with this group to the list of secrets the user can view.
+		for _, record := range listGroupRecords.ResultList {
+			// If this record has already been found and added to the list, skip it
+			_, exists := sharedSecretIDs[record.Metadata.RecordID]
+			if exists {
+				continue
+			}
+			var shared string
+			if group.MemberCount > 1 {
+				shared = "Yes"
+			} else {
+				shared = "No"
+			}
+			// find the username for secret writer if it's someone else
+			searchParams := identityClient.SearchRealmIdentitiesRequest{
+				RealmName:         options.RealmName,
+				IdentityClientIDs: []uuid.UUID{uuid.MustParse(record.Metadata.WriterID)},
+			}
+			identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
+			if err != nil {
+				return nil, err
+			}
+			username := identities.SearchedIdentitiesInformation[0].RealmUsername
+			record.Metadata.Plain[SecretWriterUsernameMetadataKey] = username
+			record.Metadata.Plain[SecretSharedMetadataKey] = shared
+			// Decrypt the record & add to the list of secrets
+			recordDecrypted, err := c.DecryptTextSecret(ctx, &record)
+			if err != nil {
+				return nil, err
+			}
+			secretDecrypted := c.MakeSecretResponse(recordDecrypted, group.GroupID.String(), username)
+			sharedSecretList = append(sharedSecretList, *secretDecrypted)
+			sharedSecretIDs[record.Metadata.RecordID] = true
+		}
+	}
+	sharedSecrets.List = sharedSecretList
+	sharedSecrets.NextToken = fmt.Sprintf("%d", responseList.NextToken)
+	return sharedSecrets, nil
+}
+
+type ViewSecretOptions struct {
+	SecretID string
+}
+
+// ViewSecret returns the decrypted secret with secretID
+func (c *ToznySDKV3) ViewSecret(ctx context.Context, options ViewSecretOptions) (*Secret, error) {
+	listRequest := storageClient.ListGroupsRequest{
+		ClientID: uuid.MustParse(c.StorageClient.ClientID),
+	}
+	groupList, err := c.StorageClient.ListGroups(ctx, listRequest)
+	if err != nil {
+		return nil, err
+	}
+	var secret *pdsClient.ListedRecord
+	var groupID string
+	for _, group := range groupList.Groups {
+		listRequest := storageClient.ListGroupRecordsRequest{
+			GroupID: group.GroupID,
+		}
+		listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+		if err != nil {
+			return nil, err
+		}
+		for _, record := range listGroupRecords.ResultList {
+			if record.Metadata.RecordID == options.SecretID {
+				secret = &record
+				groupID = group.GroupID.String()
+			}
+		}
+	}
+	recordDecrypted, err := c.DecryptTextSecret(ctx, secret)
+	if err != nil {
+		return nil, err
+	}
+	secretDecrypted := c.MakeSecretResponse(recordDecrypted, groupID, "")
+	return secretDecrypted, nil
+}
+
+// ValidToznySecretNamespace returns true if the namespace is in the form of a tozny secret
+func ValidToznySecretNamespace(groupName string) bool {
+	groupNamesSplit := strings.Split(groupName, ".")
+	if len(groupNamesSplit) < 2 || groupNamesSplit[0] != "tozny" || groupNamesSplit[1] != "secret" {
+		return false
+	}
+	return true
+}
+
+// DecryptTextSecret decrypts a non-file secret
+func (c *ToznySDKV3) DecryptTextSecret(ctx context.Context, secret *pdsClient.ListedRecord) (*pdsClient.Record, error) {
+	encryptedRecord := pdsClient.Record{
+		Metadata:        secret.Metadata,
+		Data:            secret.Data,
+		RecordSignature: secret.RecordSignature,
+	}
+	decryptedRecord, err := c.E3dbPDSClient.DecryptRecord(ctx, encryptedRecord)
+	if err != nil {
+		return nil, err
+	}
+	return &decryptedRecord, nil
+}
+
+// MakeSecretResponse makes a secret containing from the record, group, and owner info
+func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID string, ownerUsername string) *Secret {
+	secret := &Secret{
+		SecretName:    secretRecord.Metadata.Plain[SecretNameMetadataKey],
+		SecretType:    secretRecord.Metadata.Plain[SecretTypeMetadataKey],
+		SecretID:      secretRecord.Metadata.RecordID,
+		Description:   secretRecord.Metadata.Plain[SecretDescriptionMetadataKey],
+		Version:       secretRecord.Metadata.Plain[SecretVersionMetadataKey],
+		Record:        secretRecord,
+		NamespaceId:   groupID,
+		OwnerUsername: ownerUsername,
+		// RealmName: c.RealmName,
+	}
+	if secret.SecretType == "File" {
+		secret.FileName = secretRecord.Metadata.Plain[SecretFilenameMetadataKey]
+	} else {
+		secret.SecretValue = secretRecord.Data[SecretValueDataKey]
+	}
+	return secret
 }
