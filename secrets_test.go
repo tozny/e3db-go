@@ -17,12 +17,14 @@ var (
 	username          = os.Getenv("TEST_IDENTITY_USERNAME")
 	password          = os.Getenv("TEST_IDENTITY_PASSWORD")
 	baseURL           = os.Getenv("TEST_IDENTITY_API_URL")
+	secret1ID         = os.Getenv("TEST_CREATED_SECRET1_ID")
+	secret2ID         = os.Getenv("TEST_CREATED_SECRET2_ID")
 	testCtx           = context.Background()
 	plaintextFileName = "plainfile"
 	decryptedFileName = "decrypted"
 )
 
-func TestCreateAndListSecrets(t *testing.T) {
+func TestListSecrets(t *testing.T) {
 	request := TozIDLoginRequest{
 		Username:     username,
 		Password:     password,
@@ -33,40 +35,6 @@ func TestCreateAndListSecrets(t *testing.T) {
 	sdk, err := GetSDKV3ForTozIDUser(request)
 	if err != nil {
 		t.Fatalf("Could not log in %+v", err)
-	}
-	secretReq := CreateSecretOptions{
-		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
-		SecretType:  CredentialSecretType,
-		SecretValue: uuid.New().String(),
-		Description: "a credential test",
-		RealmName:   realmName,
-	}
-	validClient := `{
-		"version": "2",
-		"public_signing_key": "A5QXkIKW5dBN_IOhjGoUBtT-xuVmqRXDB2uaqiKuTao",
-		"private_signing_key": "qIqG9_81kd2gOY-yggIpahQG1MDnlBeQj7G4MHa5p0E1WapQxLVlyU6hXA6rp-Ci5DFf8g6GMaqy5t_H1g5Nqg",
-		"client_id": "4f20ca95-1b3b-b78f-b5bd-6d469ac804eb",
-		"api_key_id": "63807026e9a23850307429e52d2f607eaa5be43488cbb819b075ade91735b180",
-		"api_secret": "730e6b18dc9668fe1758304283c73060619f6596f11bf42bdd3f16d6fc6cd6d0",
-		"public_key": "6u73qLgJniPi9S2t99A7lNfvi3xjxMsPB_Z-CEGWZmo",
-		"private_key": "BnBt9_tquBvSAHL04bQm0HkQ7eXtvuj1WSHegQeho6E",
-		"api_url": "http://platform.local.tozny.com:8000",
-		"client_email": ""
-	}`
-	secretReq2 := CreateSecretOptions{
-		SecretName:  fmt.Sprintf("cred-%s", uuid.New().String()),
-		SecretType:  ClientSecretType,
-		SecretValue: validClient,
-		Description: "a client cred test",
-		RealmName:   realmName,
-	}
-	secret1, err := sdk.CreateSecret(testCtx, secretReq)
-	if err != nil {
-		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
-	}
-	secret2, err := sdk.CreateSecret(testCtx, secretReq2)
-	if err != nil {
-		t.Fatalf("Could not create secret: Req: %+v  Err: %+v", secretReq2, err)
 	}
 	listOptions := ListSecretsOptions{
 		RealmName: realmName,
@@ -79,11 +47,12 @@ func TestCreateAndListSecrets(t *testing.T) {
 	}
 	found1 := false
 	found2 := false
+	// Check that the two pre-created secrets are in the list
 	for _, secret := range listSecrets.List {
-		if secret.Record.Metadata.RecordID == secret1.Record.Metadata.RecordID && secretReq.SecretValue == secret.Record.Data["secretValue"] {
+		if secret.Record.Metadata.RecordID == secret1ID {
 			found1 = true
 		}
-		if secret.Record.Metadata.RecordID == secret2.Record.Metadata.RecordID && secretReq2.SecretValue == secret.Record.Data["secretValue"] {
+		if secret.Record.Metadata.RecordID == secret2ID {
 			found2 = true
 		}
 	}
