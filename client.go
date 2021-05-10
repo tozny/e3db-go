@@ -679,16 +679,25 @@ type ToznySDKV3 struct {
 	// Network location of the Tozny services to communicate with.
 	APIEndpoint string
 	// Tozny server defined globally unique id for this Client.
-	ClientID string
-	config   e3dbClients.ClientConfig
+	ClientID        string
+	CurrentIdentity TozIDSessionIdentityData
+	config          e3dbClients.ClientConfig
+}
+
+// LoggedInIdentityData represents data about the identity session of a given user. Currently that is just realm and
+// username but in the future may include tokens
+type TozIDSessionIdentityData struct {
+	Username string `json:"username"`
+	Realm    string `json:"realm"`
 }
 
 // ToznySDKConfig wraps parameters needed to configure a ToznySDK
 type ToznySDKConfig struct {
 	e3dbClients.ClientConfig
-	AccountUsername string `json:"account_username"`
-	AccountPassword string `json:"account_password"`
-	APIEndpoint     string `json:"api_url"`
+	TozIDSessionIdentityData `json:"toz_id_session_identity_data"`
+	AccountUsername          string `json:"account_username"`
+	AccountPassword          string `json:"account_password"`
+	APIEndpoint              string `json:"api_url"`
 }
 
 // NewToznySDK returns a new instance of the ToznySDK initialized with the provided
@@ -708,6 +717,7 @@ func NewToznySDKV3(config ToznySDKConfig) (*ToznySDKV3, error) {
 		AccountPassword:    config.AccountPassword,
 		APIEndpoint:        config.APIEndpoint,
 		ClientID:           config.ClientID,
+		CurrentIdentity:    config.TozIDSessionIdentityData,
 		config:             config.ClientConfig,
 	}, nil
 }
@@ -754,6 +764,10 @@ func sdkV3FromConfig(config ToznySDKJSONConfig) (*ToznySDKV3, error) {
 		AccountUsername: config.AccountUsername,
 		AccountPassword: config.AccountPassword,
 		APIEndpoint:     config.APIBaseURL,
+		TozIDSessionIdentityData: TozIDSessionIdentityData{
+			Username: config.Username,
+			Realm:    config.Realm,
+		},
 	})
 }
 
@@ -892,6 +906,8 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	if err != nil {
 		return nil, err
 	}
+	config.Realm = realmInfo.Name
+	config.Username = username
 	return sdkV3FromConfig(config)
 
 }
@@ -964,6 +980,10 @@ func (c *ToznySDKV3) StoreConfigFile(path string) error {
 		PrivateSigningKey: c.config.SigningKeys.Private.Material,
 		AccountUsername:   c.AccountUsername,
 		AccountPassword:   c.AccountPassword,
+		TozIDSessionIdentityData: TozIDSessionIdentityData{
+			Username: c.CurrentIdentity.Username,
+			Realm:    c.CurrentIdentity.Realm,
+		},
 	}
 	return saveJson(path, config)
 }
