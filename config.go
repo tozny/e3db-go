@@ -202,6 +202,7 @@ Interface is rapidly evolving.
 type ToznySDKJSONConfig struct {
 	// Embed all config for v1 and v2 clients
 	ConfigFile
+	TozIDSessionIdentityData `json:"toz_id_session_identity_data"`
 	PublicSigningKey  string `json:"public_signing_key"`
 	PrivateSigningKey string `json:"private_signing_key"`
 	AccountUsername   string `json:"account_user_name"`

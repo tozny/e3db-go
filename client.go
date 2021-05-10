@@ -64,8 +64,14 @@ const (
 	SecretValueDataKey              = "secretValue"
 )
 
+const (
+	FileSecretType       = "File"
+	CredentialSecretType = "Credential"
+	ClientSecretType     = "Client"
+)
+
 var (
-	SecretTypes = []string{"Client", "Credential", "File"}
+	SecretTypes = []string{ClientSecretType, CredentialSecretType, FileSecretType}
 )
 
 type akCacheKey struct {
@@ -680,16 +686,25 @@ type ToznySDKV3 struct {
 	// Network location of the Tozny services to communicate with.
 	APIEndpoint string
 	// Tozny server defined globally unique id for this Client.
-	ClientID string
-	config   e3dbClients.ClientConfig
+	ClientID        string
+	CurrentIdentity TozIDSessionIdentityData
+	config          e3dbClients.ClientConfig
+}
+
+// LoggedInIdentityData represents data about the identity session of a given user. Currently that is just realm and
+// username but in the future may include tokens
+type TozIDSessionIdentityData struct {
+	Username string `json:"username"`
+	Realm    string `json:"realm"`
 }
 
 // ToznySDKConfig wraps parameters needed to configure a ToznySDK
 type ToznySDKConfig struct {
 	e3dbClients.ClientConfig
-	AccountUsername string `json:"account_username"`
-	AccountPassword string `json:"account_password"`
-	APIEndpoint     string `json:"api_url"`
+	TozIDSessionIdentityData `json:"toz_id_session_identity_data"`
+	AccountUsername          string `json:"account_username"`
+	AccountPassword          string `json:"account_password"`
+	APIEndpoint              string `json:"api_url"`
 }
 
 // NewToznySDK returns a new instance of the ToznySDK initialized with the provided
@@ -709,6 +724,7 @@ func NewToznySDKV3(config ToznySDKConfig) (*ToznySDKV3, error) {
 		AccountPassword:    config.AccountPassword,
 		APIEndpoint:        config.APIEndpoint,
 		ClientID:           config.ClientID,
+		CurrentIdentity:    config.TozIDSessionIdentityData,
 		config:             config.ClientConfig,
 	}, nil
 }
@@ -755,6 +771,10 @@ func sdkV3FromConfig(config ToznySDKJSONConfig) (*ToznySDKV3, error) {
 		AccountUsername: config.AccountUsername,
 		AccountPassword: config.AccountPassword,
 		APIEndpoint:     config.APIBaseURL,
+		TozIDSessionIdentityData: TozIDSessionIdentityData{
+			Username: config.Username,
+			Realm:    config.Realm,
+		},
 	})
 }
 
@@ -893,6 +913,8 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	if err != nil {
 		return nil, err
 	}
+	config.Realm = realmInfo.Name
+	config.Username = username
 	return sdkV3FromConfig(config)
 
 }
@@ -965,6 +987,10 @@ func (c *ToznySDKV3) StoreConfigFile(path string) error {
 		PrivateSigningKey: c.config.SigningKeys.Private.Material,
 		AccountUsername:   c.AccountUsername,
 		AccountPassword:   c.AccountPassword,
+		TozIDSessionIdentityData: TozIDSessionIdentityData{
+			Username: c.CurrentIdentity.Username,
+			Realm:    c.CurrentIdentity.Realm,
+		},
 	}
 	return saveJson(path, config)
 }
@@ -1446,7 +1472,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOption
 		"version":     timestamp,
 	}
 	var createdRecord *pdsClient.Record
-	if secret.SecretType == "File" {
+	if secret.SecretType == FileSecretType {
 		writeFileRequest := WriteFileOptions{
 			RecordType: recordType,
 			Plain:      plain,
@@ -1766,13 +1792,13 @@ func ValidateSecret(secret CreateSecretOptions) error {
 	if !matched {
 		return errors.New("Secret name must contain 1-50 alphanumeric characters, -, or _")
 	}
-	if secret.SecretValue == "" && secret.SecretType == "Credential" {
+	if secret.SecretValue == "" && secret.SecretType == CredentialSecretType {
 		return errors.New("Value cannot be empty")
 	}
-	if secret.SecretType == "File" && strings.TrimSpace(secret.SecretName) == "" {
+	if secret.SecretType == FileSecretType && strings.TrimSpace(secret.SecretName) == "" {
 		return errors.New("File name cannot be empty")
 	}
-	if secret.SecretType == "Client" {
+	if secret.SecretType == ClientSecretType {
 		err := VerifyRawClientCredentials(secret.SecretValue)
 		if err != nil {
 			return err
@@ -1891,7 +1917,7 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 	if len(responseList.Groups) < 1 {
 		return sharedSecrets, nil
 	}
-	sharedSecretList := []Secret{}
+	var sharedSecretList []Secret
 	sharedSecretIDs := make(map[string]bool)
 	for _, group := range responseList.Groups {
 		if !ValidToznySecretNamespace(group.Name) {
@@ -1899,44 +1925,54 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 		}
 		listRequest := storageClient.ListGroupRecordsRequest{
 			GroupID: group.GroupID,
+			Max:     options.Limit,
 		}
-		listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
-		if err != nil {
-			return nil, err
-		}
-		// Add records shared with this group to the list of secrets the user can view.
-		for _, record := range listGroupRecords.ResultList {
-			// If this record has already been found and added to the list, skip it
-			_, exists := sharedSecretIDs[record.Metadata.RecordID]
-			if exists {
-				continue
+		for {
+			listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+			if err != nil {
+				return nil, err
 			}
-			var shared string
-			if group.MemberCount > 1 {
-				shared = "Yes"
+			// Add records shared with this group to the list of secrets the user can view.
+			for _, record := range listGroupRecords.ResultList {
+				// If this record has already been found and added to the list, skip it
+				_, exists := sharedSecretIDs[record.Metadata.RecordID]
+				if exists {
+					continue
+				}
+				var shared string
+				if group.MemberCount > 1 {
+					shared = "Yes"
+				} else {
+					shared = "No"
+				}
+				// find the username for secret writer if it's someone else
+				searchParams := identityClient.SearchRealmIdentitiesRequest{
+					RealmName:         options.RealmName,
+					IdentityClientIDs: []uuid.UUID{uuid.MustParse(record.Metadata.WriterID)},
+				}
+				identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
+				if err != nil {
+					return nil, err
+				}
+				username := identities.SearchedIdentitiesInformation[0].RealmUsername
+				record.Metadata.Plain[SecretWriterUsernameMetadataKey] = username
+				record.Metadata.Plain[SecretSharedMetadataKey] = shared
+				// Decrypt the record & add to the list of secrets
+				recordDecrypted, err := c.DecryptTextSecret(ctx, &record)
+				if err != nil {
+					return nil, err
+				}
+				secretDecrypted := c.MakeSecretResponse(recordDecrypted, group.GroupID.String(), username)
+				sharedSecretList = append(sharedSecretList, *secretDecrypted)
+				sharedSecretIDs[record.Metadata.RecordID] = true
+			}
+
+			if listGroupRecords.NextToken == "0" {
+				break
 			} else {
-				shared = "No"
+				listRequest.NextToken = listGroupRecords.NextToken
 			}
-			// find the username for secret writer if it's someone else
-			searchParams := identityClient.SearchRealmIdentitiesRequest{
-				RealmName:         options.RealmName,
-				IdentityClientIDs: []uuid.UUID{uuid.MustParse(record.Metadata.WriterID)},
-			}
-			identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
-			if err != nil {
-				return nil, err
-			}
-			username := identities.SearchedIdentitiesInformation[0].RealmUsername
-			record.Metadata.Plain[SecretWriterUsernameMetadataKey] = username
-			record.Metadata.Plain[SecretSharedMetadataKey] = shared
-			// Decrypt the record & add to the list of secrets
-			recordDecrypted, err := c.DecryptTextSecret(ctx, &record)
-			if err != nil {
-				return nil, err
-			}
-			secretDecrypted := c.MakeSecretResponse(recordDecrypted, group.GroupID.String(), username)
-			sharedSecretList = append(sharedSecretList, *secretDecrypted)
-			sharedSecretIDs[record.Metadata.RecordID] = true
+
 		}
 	}
 	sharedSecrets.List = sharedSecretList
@@ -1945,7 +1981,8 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 }
 
 type ViewSecretOptions struct {
-	SecretID uuid.UUID
+	SecretID   uuid.UUID
+	MaxSecrets int
 }
 
 // ViewSecret returns the decrypted secret with secretID
@@ -1959,23 +1996,34 @@ func (c *ToznySDKV3) ViewSecret(ctx context.Context, options ViewSecretOptions) 
 	}
 	var secret *pdsClient.ListedRecord
 	var groupID string
+	var nextToken string
 	for _, group := range groupList.Groups {
 		listRequest := storageClient.ListGroupRecordsRequest{
-			GroupID: group.GroupID,
+			GroupID:   group.GroupID,
+			NextToken: nextToken,
+			Max:       options.MaxSecrets,
 		}
-		listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
-		if err != nil {
-			return nil, err
-		}
-		for _, record := range listGroupRecords.ResultList {
-			if record.Metadata.RecordID == options.SecretID.String() {
-				secret = &record
-				groupID = group.GroupID.String()
+		for {
+			listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+			if err != nil {
+				return nil, err
+			}
+			for _, record := range listGroupRecords.ResultList {
+				if record.Metadata.RecordID == options.SecretID.String() {
+					secret = &record
+					groupID = group.GroupID.String()
+					break
+				}
+			}
+			if listGroupRecords.NextToken == "0" {
+				break
+			} else {
+				listRequest.NextToken = listGroupRecords.NextToken
 			}
 		}
 	}
 	if secret == nil {
-		return nil, fmt.Errorf("ViewSecret: could not find secret")
+		return nil, fmt.Errorf("the requested secret could not be found: %s", options.SecretID)
 	}
 	recordDecrypted, err := c.DecryptTextSecret(ctx, secret)
 	if err != nil {
@@ -2021,7 +2069,7 @@ func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID 
 		OwnerUsername: ownerUsername,
 		// RealmName: c.RealmName,
 	}
-	if secret.SecretType == "File" {
+	if secret.SecretType == FileSecretType {
 		secret.FileName = secretRecord.Metadata.Plain[SecretFilenameMetadataKey]
 	} else {
 		secret.SecretValue = secretRecord.Data[SecretValueDataKey]
