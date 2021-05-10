@@ -1404,7 +1404,7 @@ type Secret struct {
 	SecretValue   string
 	Description   string
 	FileName      string
-	SecretID      string
+	SecretID      uuid.UUID
 	RealmName     string
 	OwnerUsername string
 	NamespaceId   string
@@ -1490,18 +1490,18 @@ func (c *ToznySDKV3) WriteFile(ctx context.Context, options WriteFileOptions) (*
 		return nil, err
 	}
 	// Encrypt the file
-	size, checksum, err := e3dbClients.EncryptFile(options.FileName, DefaultEncryptedFileName, ak)
+	encryptionInfo, err := e3dbClients.EncryptFile(options.FileName, DefaultEncryptedFileName, ak)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		err := os.Remove(DefaultEncryptedFileName)
+		err := os.Remove(encryptionInfo.EncryptedFileName)
 		if err != nil {
-			fmt.Printf("CreatedSecret: Could not delete %s: %+v", DefaultEncryptedFileName, err)
+			fmt.Printf("WriteFile: Could not delete %s: %+v", encryptionInfo.EncryptedFileName, err)
 		}
 	}()
 	options.Plain[SecretFilenameMetadataKey] = options.FileName
-	sizeKB := size / 1024
+	sizeKB := encryptionInfo.Size / 1024
 	if sizeKB >= 1 {
 		options.Plain[SecretFileSizeMetadataKey] = fmt.Sprintf("%d", sizeKB)
 	} else {
@@ -1515,8 +1515,8 @@ func (c *ToznySDKV3) WriteFile(ctx context.Context, options WriteFileOptions) (*
 			UserID:   uuid.MustParse(c.StorageClient.ClientID),
 			Plain:    options.Plain,
 			FileMeta: &storageClient.FileMeta{
-				Size:        int64(size),
-				Checksum:    checksum,
+				Size:        int64(encryptionInfo.Size),
+				Checksum:    encryptionInfo.Checksum,
 				Compression: "raw",
 			},
 		},
@@ -1527,12 +1527,12 @@ func (c *ToznySDKV3) WriteFile(ctx context.Context, options WriteFileOptions) (*
 	}
 	uploadRequest := file.UploadRequest{
 		URL:               pendingFileURL.FileURL,
-		EncryptedFileName: DefaultEncryptedFileName,
-		Checksum:          checksum,
-		Size:              size,
+		EncryptedFileName: encryptionInfo.EncryptedFileName,
+		Checksum:          encryptionInfo.Checksum,
+		Size:              encryptionInfo.Size,
 	}
-	uploadResp, err := file.UploadFile(uploadRequest)
-	if err != nil || uploadResp != 0 {
+	err = file.UploadFile(uploadRequest)
+	if err != nil {
 		return nil, err
 	}
 	// Register the file as being written
@@ -1560,17 +1560,13 @@ func (c *ToznySDKV3) WriteFile(ctx context.Context, options WriteFileOptions) (*
 }
 
 type ReadFileOptions struct {
-	RecordID         string
+	RecordID         uuid.UUID
 	DownloadFileName string
 }
 
 // ReadFile downloads and decrypts the file from the record
 func (c *ToznySDKV3) ReadFile(ctx context.Context, options ReadFileOptions) error {
-	secretUUID, err := uuid.Parse(options.RecordID)
-	if err != nil {
-		return err
-	}
-	fileResp, err := c.E3dbPDSClient.GetFileRecord(ctx, secretUUID)
+	fileResp, err := c.E3dbPDSClient.GetFileRecord(ctx, options.RecordID)
 	if err != nil {
 		return err
 	}
@@ -1579,16 +1575,18 @@ func (c *ToznySDKV3) ReadFile(ctx context.Context, options ReadFileOptions) erro
 		URL:               fileURL,
 		EncryptedFileName: DefaultDownloadedFileName,
 	}
-	downloadResponse, err := file.DownloadFile(downloadRequest)
-	if err != nil || downloadResponse != "" {
-		return fmt.Errorf("ReadFile: Err: %+v  Resp: %+v", err, downloadResponse)
+	// download file from URL and store in EncryptedFileName
+	downloadedPath, err := file.DownloadFile(downloadRequest)
+	if err != nil {
+		return fmt.Errorf("ReadFile: Err: %+v", err)
 	}
 	defer func() {
-		err := os.Remove(DefaultDownloadedFileName)
+		err := os.Remove(downloadedPath)
 		if err != nil {
-			fmt.Printf("ReadFile: Could not delete %s: %+v", DefaultDownloadedFileName, err)
+			fmt.Printf("ReadFile: Could not delete %s: %+v", downloadedPath, err)
 		}
 	}()
+	// get access key for the record type
 	keyRequest := pdsClient.GetOrCreateAccessKeyRequest{
 		WriterID:   c.E3dbPDSClient.ClientID,
 		UserID:     c.E3dbPDSClient.ClientID,
@@ -1599,7 +1597,8 @@ func (c *ToznySDKV3) ReadFile(ctx context.Context, options ReadFileOptions) erro
 	if err != nil {
 		return err
 	}
-	err = e3dbClients.DecryptFile(DefaultDownloadedFileName, options.DownloadFileName, ak)
+	// decrypt the file with the access key
+	err = e3dbClients.DecryptFile(downloadedPath, options.DownloadFileName, ak)
 	if err != nil {
 		return err
 	}
@@ -1946,7 +1945,7 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 }
 
 type ViewSecretOptions struct {
-	SecretID string
+	SecretID uuid.UUID
 }
 
 // ViewSecret returns the decrypted secret with secretID
@@ -1969,11 +1968,14 @@ func (c *ToznySDKV3) ViewSecret(ctx context.Context, options ViewSecretOptions) 
 			return nil, err
 		}
 		for _, record := range listGroupRecords.ResultList {
-			if record.Metadata.RecordID == options.SecretID {
+			if record.Metadata.RecordID == options.SecretID.String() {
 				secret = &record
 				groupID = group.GroupID.String()
 			}
 		}
+	}
+	if secret == nil {
+		return nil, fmt.Errorf("ViewSecret: could not find secret")
 	}
 	recordDecrypted, err := c.DecryptTextSecret(ctx, secret)
 	if err != nil {
@@ -2011,7 +2013,7 @@ func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID 
 	secret := &Secret{
 		SecretName:    secretRecord.Metadata.Plain[SecretNameMetadataKey],
 		SecretType:    secretRecord.Metadata.Plain[SecretTypeMetadataKey],
-		SecretID:      secretRecord.Metadata.RecordID,
+		SecretID:      uuid.MustParse(secretRecord.Metadata.RecordID),
 		Description:   secretRecord.Metadata.Plain[SecretDescriptionMetadataKey],
 		Version:       secretRecord.Metadata.Plain[SecretVersionMetadataKey],
 		Record:        secretRecord,
