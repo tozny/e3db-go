@@ -33,7 +33,7 @@ func TestCreateAndListSecrets(t *testing.T) {
 	}
 	secretReq := CreateSecretOptions{
 		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
-		SecretType:  "Credential",
+		SecretType:  CredentialSecretType,
 		SecretValue: uuid.New().String(),
 		Description: "a credential test",
 		RealmName:   realmName,
@@ -52,7 +52,7 @@ func TestCreateAndListSecrets(t *testing.T) {
 	}`
 	secretReq2 := CreateSecretOptions{
 		SecretName:  fmt.Sprintf("cred-%s", uuid.New().String()),
-		SecretType:  "Client",
+		SecretType:  ClientSecretType,
 		SecretValue: validClient,
 		Description: "a client cred test",
 		RealmName:   realmName,
@@ -67,7 +67,7 @@ func TestCreateAndListSecrets(t *testing.T) {
 	}
 	listOptions := ListSecretsOptions{
 		RealmName: realmName,
-		Limit:     30,
+		Limit:     1000,
 		NextToken: 0,
 	}
 	listSecrets, err := sdk.ListSecrets(testCtx, listOptions)
@@ -115,7 +115,7 @@ func TestInvalidCredSecretFails(t *testing.T) {
 	}`
 	secretReq := CreateSecretOptions{
 		SecretName:  fmt.Sprintf("cred-%s", uuid.New().String()),
-		SecretType:  "Client",
+		SecretType:  ClientSecretType,
 		SecretValue: invalidClient,
 		Description: "a client cred test",
 		RealmName:   realmName,
@@ -137,7 +137,7 @@ func TestInvalidCredSecretFails(t *testing.T) {
 	}`
 	secretReq = CreateSecretOptions{
 		SecretName:  fmt.Sprintf("cred-%s", uuid.New().String()),
-		SecretType:  "Client",
+		SecretType:  ClientSecretType,
 		SecretValue: invalidClient,
 		Description: "a client cred test",
 		RealmName:   realmName,
@@ -162,7 +162,7 @@ func TestCreateAndViewSecretSucceeds(t *testing.T) {
 	}
 	secretReq := CreateSecretOptions{
 		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
-		SecretType:  "Credential",
+		SecretType:  CredentialSecretType,
 		SecretValue: uuid.New().String(),
 		Description: "a credential test",
 		RealmName:   realmName,
@@ -173,6 +173,7 @@ func TestCreateAndViewSecretSucceeds(t *testing.T) {
 	}
 	viewOptions := ViewSecretOptions{
 		SecretID: secretCreated.Record.Metadata.RecordID,
+		MaxSecrets: 1000,
 	}
 	secretView, err := sdk.ViewSecret(testCtx, viewOptions)
 	if err != nil {
@@ -212,7 +213,7 @@ func TestCreateAndViewFileSecretSucceeds(t *testing.T) {
 	}
 	secretReq := CreateSecretOptions{
 		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
-		SecretType:  "File",
+		SecretType:  FileSecretType,
 		SecretValue: "",
 		Description: "a file test",
 		FileName:    plaintextFileName,
