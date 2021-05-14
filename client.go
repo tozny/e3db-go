@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tozny/e3db-clients-go/searchExecutorClient"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -2075,4 +2076,16 @@ func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID 
 		secret.SecretValue = secretRecord.Data[SecretValueDataKey]
 	}
 	return secret
+}
+
+
+
+// ExecuteSearch takes the given request and returns all records that match that request.
+func (c *ToznySDKV3) ExecuteSearch(executorRequest *searchExecutorClient.ExecutorQueryRequest) (*[]pdsClient.ListedRecord, error) {
+	client := searchExecutorClient.New(c.config)
+	results, _, err := searchExecutorClient.TimePaginateSearch(client, *executorRequest)
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
 }
