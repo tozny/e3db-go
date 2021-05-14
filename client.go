@@ -2076,3 +2076,28 @@ func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID 
 	}
 	return secret
 }
+
+type ShareSecretInfo struct {
+	SecretName     string
+	SecretType     string
+	UsernamesToAdd []string
+	RealmName      string
+}
+
+func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSecretInfo) error {
+	if len(params.UsernamesToAdd) == 0 {
+		return fmt.Errorf("At least one username required.")
+	}
+	// find the username for secret writer if it's someone else
+	searchParams := identityClient.SearchRealmIdentitiesRequest{
+		RealmName:         params.RealmName,
+		IdentityUsernames: params.UsernamesToAdd,
+	}
+	identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("identities: %+v", identities)
+
+	return nil
+}
