@@ -2051,7 +2051,7 @@ func (c *ToznySDKV3) DecryptTextSecret(ctx context.Context, secret *pdsClient.Li
 		Data:            secret.Data,
 		RecordSignature: secret.RecordSignature,
 	}
-	decryptedRecord, err := c.E3dbPDSClient.DecryptRecord(ctx, encryptedRecord)
+	decryptedRecord, err := c.E3dbPDSClient.DecryptGroupRecordWithGroupEncryptedAccessKey(ctx, encryptedRecord, secret.AccessKey)
 	if err != nil {
 		return nil, err
 	}
