@@ -15,6 +15,7 @@ import (
 var (
 	realmName         = os.Getenv("TEST_IDENTITY_REALM_NAME")
 	username          = os.Getenv("TEST_IDENTITY_USERNAME")
+	username2         = os.Getenv("TEST_IDENTITY_USERNAME2")
 	password          = os.Getenv("TEST_IDENTITY_PASSWORD")
 	baseURL           = os.Getenv("TEST_IDENTITY_API_URL")
 	secret1ID         = os.Getenv("TEST_CREATED_SECRET1_ID")
@@ -221,6 +222,67 @@ func TestCreateAndReadFileSecretSucceeds(t *testing.T) {
 	compare := bytes.Equal(plaintext, decrypted)
 	if !compare {
 		t.Fatalf("%s and %s files do not match", plaintextFileName, decryptedFileName)
+	}
+}
+
+func TestShareSecretByUsernameSucceeds(t *testing.T) {
+	// login id 1
+	request := TozIDLoginRequest{
+		Username:     username2,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	// login id 2
+	request = TozIDLoginRequest{
+		Username:     username,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk2, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	// id 1 makes a secret
+	secretReq := CreateSecretOptions{
+		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
+		SecretType:  CredentialSecretType,
+		SecretValue: uuid.New().String(),
+		Description: "a credential test",
+		RealmName:   realmName,
+	}
+	secretCreated, err := sdk.CreateSecret(testCtx, secretReq)
+	if err != nil {
+		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
+	}
+	// id 1 shares the secret with id 2
+	shareOptions := ShareSecretInfo{
+		SecretName:    secretCreated.SecretName,
+		SecretType:    secretCreated.SecretType,
+		UsernameToAdd: username,
+	}
+	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
+	if err != nil {
+		t.Fatalf("Error sharing with username: Err: %+v\n", err)
+	}
+	// id 2 tries to view secret
+	viewOptions := ViewSecretOptions{
+		SecretID:   secretCreated.SecretID,
+		MaxSecrets: 1000,
+	}
+	secretView, err := sdk2.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: Err: %+v", err)
+	}
+	if secretReq.SecretValue != secretView.SecretValue {
+		t.Fatalf("SecretValue doesn't match. Created: %s Viewed: %s", secretCreated.Record.Data["secretValue"], secretView.Record.Data["secretValue"])
 	}
 }
 

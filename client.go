@@ -1458,6 +1458,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOption
 	namespaceOptions := NamespaceOptions{
 		RealmName: realmName,
 		Namespace: c.StorageClient.ClientID,
+		ClientIDs: []uuid.UUID{uuid.MustParse(c.StorageClient.ClientID)},
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
 	if err != nil {
@@ -1702,10 +1703,11 @@ func (c *ToznySDKV3) ShareRecordWithGroup(ctx context.Context, recordType string
 type NamespaceOptions struct {
 	Namespace string
 	RealmName string
+	ClientIDs []uuid.UUID
 }
 
 // GetOrCreateNamespace creates the group for the namespace if it doesn't exist and returns the Group
-func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, options NamespaceOptions /*realmName string, namespace string*/) (*storageClient.Group, error) {
+func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, options NamespaceOptions) (*storageClient.Group, error) {
 	var group *storageClient.Group
 	groupName := fmt.Sprintf("tozny.secret.%s.%s", options.RealmName, options.Namespace)
 	listRequest := storageClient.ListGroupsRequest{
@@ -1736,26 +1738,28 @@ func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, options Namespace
 			return nil, err
 		}
 		group = createGroupResponse
-		// get membership keys
-		membershipKeyRequest := storageClient.CreateMembershipKeyRequest{
-			GroupAdminID:      c.StorageClient.ClientID,
-			NewMemberID:       c.StorageClient.ClientID,
-			EncryptedGroupKey: createGroupResponse.EncryptedGroupKey,
-			ShareePublicKey:   c.StorageClient.EncryptionKeys.Public.Material,
-		}
-		membershipKeyResp, err := c.StorageClient.CreateGroupMembershipKey(ctx, membershipKeyRequest)
-		if err != nil {
-			return nil, err
-		}
-		// make the capabilities
+		// make the capabilities -- for now, all members get read and share capabilities
 		groupMemberCapabilities := []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
-		// make a new member
+		// make new members from the clientIDs
 		memberRequest := []storageClient.GroupMember{}
-		memberRequest = append(memberRequest, storageClient.GroupMember{
-			ClientID:        uuid.MustParse(c.StorageClient.ClientID),
-			MembershipKey:   membershipKeyResp,
-			CapabilityNames: groupMemberCapabilities,
-		})
+		for _, clientID := range options.ClientIDs {
+			// get membership keys for the specific member
+			membershipKeyRequest := storageClient.CreateMembershipKeyRequest{
+				GroupAdminID:      c.ClientID,
+				NewMemberID:       clientID.String(),
+				EncryptedGroupKey: group.EncryptedGroupKey,
+				ShareePublicKey:   c.StorageClient.EncryptionKeys.Public.Material,
+			}
+			membershipKeyResp, err := c.StorageClient.CreateGroupMembershipKey(ctx, membershipKeyRequest)
+			if err != nil {
+				return nil, err
+			}
+			memberRequest = append(memberRequest, storageClient.GroupMember{
+				ClientID:        clientID,
+				MembershipKey:   membershipKeyResp,
+				CapabilityNames: groupMemberCapabilities,
+			})
+		}
 		// add group members
 		addMemberRequest := storageClient.AddGroupMembersRequest{
 			GroupID:      createGroupResponse.GroupID,
@@ -2042,14 +2046,14 @@ func ValidToznySecretNamespace(groupName string) bool {
 	return true
 }
 
-// DecryptTextSecret decrypts a non-file secret
+// DecryptTextSecret decrypts a non-file secret using the group access key
 func (c *ToznySDKV3) DecryptTextSecret(ctx context.Context, secret *pdsClient.ListedRecord) (*pdsClient.Record, error) {
 	encryptedRecord := pdsClient.Record{
 		Metadata:        secret.Metadata,
 		Data:            secret.Data,
 		RecordSignature: secret.RecordSignature,
 	}
-	decryptedRecord, err := c.E3dbPDSClient.DecryptRecord(ctx, encryptedRecord)
+	decryptedRecord, err := c.E3dbPDSClient.DecryptGroupRecordWithGroupEncryptedAccessKey(ctx, encryptedRecord, secret.AccessKey)
 	if err != nil {
 		return nil, err
 	}
@@ -2078,26 +2082,43 @@ func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID 
 }
 
 type ShareSecretInfo struct {
-	SecretName     string
-	SecretType     string
-	UsernamesToAdd []string
-	RealmName      string
+	SecretName    string
+	SecretType    string
+	UsernameToAdd string
 }
 
+// ShareSecretWithUsername shares all versions of a specified secret with the user with UsernameToAdd
 func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSecretInfo) error {
-	if len(params.UsernamesToAdd) == 0 {
-		return fmt.Errorf("At least one username required.")
+	if len(params.UsernameToAdd) == 0 {
+		return fmt.Errorf("Username to add must be specified.")
 	}
-	// find the username for secret writer if it's someone else
+	// find the clientIDs for each username
 	searchParams := identityClient.SearchRealmIdentitiesRequest{
-		RealmName:         params.RealmName,
-		IdentityUsernames: params.UsernamesToAdd,
+		RealmName:         c.CurrentIdentity.Realm,
+		IdentityUsernames: []string{params.UsernameToAdd},
 	}
 	identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("identities: %+v", identities)
-
+	// find or create the group for sharing with UsernameToAdd
+	namespaceOptions := NamespaceOptions{
+		RealmName: c.CurrentIdentity.Realm,
+		Namespace: fmt.Sprintf("%s.%s", c.StorageClient.ClientID, identities.SearchedIdentitiesInformation[0].ClientID),
+		ClientIDs: []uuid.UUID{
+			uuid.MustParse(c.StorageClient.ClientID),
+			identities.SearchedIdentitiesInformation[0].ClientID,
+		},
+	}
+	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
+	if err != nil {
+		return err
+	}
+	// share record type with group
+	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, params.SecretType, params.SecretName)
+	err = c.ShareRecordWithGroup(ctx, recordType, group)
+	if err != nil {
+		return err
+	}
 	return nil
 }
