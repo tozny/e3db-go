@@ -37,6 +37,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tozny/e3db-clients-go/searchExecutorClient"
+
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/file"
@@ -689,6 +691,7 @@ type ToznySDKV3 struct {
 	ClientID        string
 	CurrentIdentity TozIDSessionIdentityData
 	config          e3dbClients.ClientConfig
+	akCache         map[akCacheKey]e3dbClients.SymmetricKey
 }
 
 // LoggedInIdentityData represents data about the identity session of a given user. Currently that is just realm and
@@ -1615,8 +1618,8 @@ func (c *ToznySDKV3) ReadFile(ctx context.Context, options ReadFileOptions) erro
 	}()
 	// get access key for the record type
 	keyRequest := pdsClient.GetOrCreateAccessKeyRequest{
-		WriterID:   c.E3dbPDSClient.ClientID,
-		UserID:     c.E3dbPDSClient.ClientID,
+		WriterID:   fileResp.Metadata.WriterID,
+		UserID:     fileResp.Metadata.UserID,
 		ReaderID:   c.E3dbPDSClient.ClientID,
 		RecordType: fileResp.Metadata.Type,
 	}
@@ -2121,4 +2124,45 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 		return err
 	}
 	return nil
+}
+
+// ExecuteSearch takes the given request and returns all records that match that request. Record data for non-files is decrypted. Files must be downloaded separately
+func (c *ToznySDKV3) ExecuteSearch(executorRequest *searchExecutorClient.ExecutorQueryRequest) (*[]pdsClient.ListedRecord, error) {
+	client := searchExecutorClient.New(c.config)
+	results, _, err := searchExecutorClient.TimePaginateSearch(client, *executorRequest)
+	if err != nil {
+		return nil, err
+	}
+	rawEncryptionKey, err := e3dbClients.DecodeSymmetricKey(c.E3dbPDSClient.EncryptionKeys.Private.Material)
+	if err != nil {
+		return nil, err
+	}
+	for index, record := range *results {
+		accessKey, err := c.getAKForListedRecord(rawEncryptionKey, record)
+		if err != nil {
+			return nil, err
+		}
+		data, err := e3dbClients.DecryptData(record.Data, accessKey)
+		if err != nil {
+			return nil, err
+		}
+		(*results)[index].Data = data
+	}
+	return results, nil
+}
+
+func (c *ToznySDKV3) getAKForListedRecord(symmetricKey e3dbClients.SymmetricKey, record pdsClient.ListedRecord) (e3dbClients.SymmetricKey, error) {
+	if c.akCache == nil {
+		c.akCache = make(map[akCacheKey]e3dbClients.SymmetricKey)
+	}
+	key, exists := c.akCache[akCacheKey{record.Metadata.WriterID, record.Metadata.UserID, record.Metadata.Type}]
+	if exists {
+		return key, nil
+	}
+	accessKey, err := e3dbClients.DecryptEAK(record.AccessKey.EAK, record.AccessKey.AuthorizerPublicKey.Curve25519, symmetricKey)
+	if err != nil {
+		return nil, err
+	}
+	c.akCache[akCacheKey{record.Metadata.WriterID, record.Metadata.UserID, record.Metadata.Type}] = accessKey
+	return accessKey, nil
 }
