@@ -286,6 +286,38 @@ func TestShareSecretByUsernameSucceeds(t *testing.T) {
 	}
 }
 
+func TestShareSecretInvalidUsernameFails(t *testing.T) {
+	request := TozIDLoginRequest{
+		Username:     username,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	viewOptions := ViewSecretOptions{
+		SecretID:   uuid.MustParse(secret1ID),
+		MaxSecrets: 1000,
+	}
+	secret, err := sdk.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: Err: %+v", err)
+	}
+	// share secret with a username that doesn't exist
+	shareOptions := ShareSecretInfo{
+		SecretName:    secret.SecretName,
+		SecretType:    secret.SecretType,
+		UsernameToAdd: "invalid-user",
+	}
+	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
+	if err == nil {
+		t.Fatal("Should error since username doesn't exist\n")
+	}
+}
+
 func mfaHandler(sessionResponse *IdentitySessionIntermediateResponse) (LoginActionData, error) {
 	if sessionResponse.LoginActionType == "login-totp" {
 		totpValue := make(map[string]string)

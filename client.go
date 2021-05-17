@@ -1961,6 +1961,9 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 				if err != nil {
 					return nil, err
 				}
+				if len(identities.SearchedIdentitiesInformation) < 1 {
+					return nil, fmt.Errorf("ListSecrets: no identity found with clientID %s", record.Metadata.WriterID)
+				}
 				username := identities.SearchedIdentitiesInformation[0].RealmUsername
 				record.Metadata.Plain[SecretWriterUsernameMetadataKey] = username
 				record.Metadata.Plain[SecretSharedMetadataKey] = shared
@@ -2103,6 +2106,9 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
 	if err != nil {
 		return err
+	}
+	if len(identities.SearchedIdentitiesInformation) < 1 {
+		return fmt.Errorf("ShareSecretWithUser: no identity found with username %s", params.UsernameToAdd)
 	}
 	// find or create the group for sharing with UsernameToAdd
 	namespaceOptions := NamespaceOptions{
