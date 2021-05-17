@@ -1459,9 +1459,9 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOption
 		return nil, err
 	}
 	namespaceOptions := NamespaceOptions{
-		RealmName: realmName,
-		Namespace: c.StorageClient.ClientID,
-		ClientIDs: []uuid.UUID{uuid.MustParse(c.StorageClient.ClientID)},
+		RealmName:      realmName,
+		Namespace:      c.StorageClient.ClientID,
+		ClientIDsToAdd: []uuid.UUID{uuid.MustParse(c.StorageClient.ClientID)},
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
 	if err != nil {
@@ -1704,9 +1704,9 @@ func (c *ToznySDKV3) ShareRecordWithGroup(ctx context.Context, recordType string
 }
 
 type NamespaceOptions struct {
-	Namespace string
-	RealmName string
-	ClientIDs []uuid.UUID
+	Namespace      string
+	RealmName      string
+	ClientIDsToAdd []uuid.UUID
 }
 
 // GetOrCreateNamespace creates the group for the namespace if it doesn't exist and returns the Group
@@ -1745,7 +1745,24 @@ func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, options Namespace
 		groupMemberCapabilities := []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
 		// make new members from the clientIDs
 		memberRequest := []storageClient.GroupMember{}
-		for _, clientID := range options.ClientIDs {
+		// get membership keys for the calling client
+		membershipKeyRequest := storageClient.CreateMembershipKeyRequest{
+			GroupAdminID:      c.ClientID,
+			NewMemberID:       c.StorageClient.ClientID,
+			EncryptedGroupKey: group.EncryptedGroupKey,
+			ShareePublicKey:   c.StorageClient.EncryptionKeys.Public.Material,
+		}
+		membershipKeyResp, err := c.StorageClient.CreateGroupMembershipKey(ctx, membershipKeyRequest)
+		if err != nil {
+			return nil, err
+		}
+		// add calling client as group member
+		memberRequest = append(memberRequest, storageClient.GroupMember{
+			ClientID:        uuid.MustParse(c.StorageClient.ClientID),
+			MembershipKey:   membershipKeyResp,
+			CapabilityNames: groupMemberCapabilities,
+		})
+		for _, clientID := range options.ClientIDsToAdd {
 			// get membership keys for the specific member
 			membershipKeyRequest := storageClient.CreateMembershipKeyRequest{
 				GroupAdminID:      c.ClientID,
@@ -1961,10 +1978,10 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 				if err != nil {
 					return nil, err
 				}
-				if len(identities.SearchedIdentitiesInformation) < 1 {
-					return nil, fmt.Errorf("ListSecrets: no identity found with clientID %s", record.Metadata.WriterID)
+				var username string
+				if len(identities.SearchedIdentitiesInformation) > 0 {
+					username = identities.SearchedIdentitiesInformation[0].RealmUsername
 				}
-				username := identities.SearchedIdentitiesInformation[0].RealmUsername
 				record.Metadata.Plain[SecretWriterUsernameMetadataKey] = username
 				record.Metadata.Plain[SecretSharedMetadataKey] = shared
 				// Decrypt the record & add to the list of secrets
@@ -2095,7 +2112,7 @@ type ShareSecretInfo struct {
 
 // ShareSecretWithUsername shares all versions of a specified secret with the user with UsernameToAdd
 func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSecretInfo) error {
-	if len(params.UsernameToAdd) == 0 {
+	if params.UsernameToAdd == "" {
 		return fmt.Errorf("Username to add must be specified.")
 	}
 	// find the clientIDs for each username
@@ -2114,10 +2131,6 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	namespaceOptions := NamespaceOptions{
 		RealmName: c.CurrentIdentity.Realm,
 		Namespace: fmt.Sprintf("%s.%s", c.StorageClient.ClientID, identities.SearchedIdentitiesInformation[0].ClientID),
-		ClientIDs: []uuid.UUID{
-			uuid.MustParse(c.StorageClient.ClientID),
-			identities.SearchedIdentitiesInformation[0].ClientID,
-		},
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
 	if err != nil {
