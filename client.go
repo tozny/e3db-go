@@ -2162,7 +2162,7 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	// Find or create the group for sharing with UsernameToAdd
 	namespaceOptions := NamespaceOptions{
 		RealmName:     c.CurrentIdentity.Realm,
-		Namespace:     fmt.Sprintf("%s.%s", c.StorageClient.ClientID, clientID),
+		Namespace:     fmt.Sprintf("%s.%s.%s.%s", c.StorageClient.ClientID, clientID, params.SecretName, params.SecretType),
 		SharingMatrix: sharingMatrix,
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
@@ -2175,6 +2175,33 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+type UnshareSecretInfo struct {
+	SecretName       string
+	SecretType       string
+	UsernameToRevoke string
+}
+
+func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, params UnshareSecretInfo) error {
+	if params.UsernameToRevoke == "" {
+		return fmt.Errorf("UnshareSecretFromUsername: Username to revoke must be provided")
+	}
+	// find the clientID for the username
+	searchParams := identityClient.SearchRealmIdentitiesRequest{
+		RealmName:         c.CurrentIdentity.Realm,
+		IdentityUsernames: []string{params.UsernameToRevoke},
+	}
+	identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
+	if err != nil {
+		return err
+	}
+	if len(identities.SearchedIdentitiesInformation) < 1 {
+		return fmt.Errorf("UnshareSecretFromUser: no identity found with username %s", params.UsernameToRevoke)
+	}
+	fmt.Printf("ids: %+v", identities.SearchedIdentitiesInformation)
+
 	return nil
 }
 
