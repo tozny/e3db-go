@@ -2162,7 +2162,7 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	// Find or create the group for sharing with UsernameToAdd
 	namespaceOptions := NamespaceOptions{
 		RealmName:     c.CurrentIdentity.Realm,
-		Namespace:     fmt.Sprintf("%s.%s", c.StorageClient.ClientID, clientID),
+		Namespace:     fmt.Sprintf("%s.%s.%s.%s", c.StorageClient.ClientID, clientID, params.SecretName, params.SecretType),
 		SharingMatrix: sharingMatrix,
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
