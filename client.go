@@ -37,13 +37,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tozny/e3db-clients-go/searchExecutorClient"
-
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/file"
 	"github.com/tozny/e3db-clients-go/identityClient"
 	"github.com/tozny/e3db-clients-go/pdsClient"
+	"github.com/tozny/e3db-clients-go/searchExecutorClient"
 	"github.com/tozny/e3db-clients-go/storageClient"
 
 	"github.com/google/uuid"
