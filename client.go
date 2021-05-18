@@ -1467,7 +1467,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secretDetails CreateSecre
 	}
 	ownerClientID, err := uuid.Parse(c.StorageClient.ClientID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("CreateSecret: Client ID must be a valid UUID, got %s", c.StorageClient.ClientID)
 	}
 	// Default permissions for the owner are share & read, but this will be replaced if the user specified permissions
 	permissions := []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
@@ -1982,7 +1982,7 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 				// find the username for secret writer if it's someone else
 				writerID, err := uuid.Parse(record.Metadata.WriterID)
 				if err != nil {
-					processingErrors = append(processingErrors, fmt.Errorf("WriterID must be a UUID but is %s. Error: %+v", record.Metadata.WriterID, err))
+					processingErrors = append(processingErrors, fmt.Errorf("WriterID must be a UUID but is %s.", record.Metadata.WriterID))
 					continue
 				}
 				searchParams := identityClient.SearchRealmIdentitiesRequest{
@@ -2137,7 +2137,7 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	sharingMatrix := make(map[uuid.UUID][]string)
 	ownerClientID, err := uuid.Parse(c.StorageClient.ClientID)
 	if err != nil {
-		return err
+		return fmt.Errorf("ShareSecretWithUsername: Client ID must be a valid UUID, got %s", c.StorageClient.ClientID)
 	}
 	// Add default permissions for the calling client to the sharing matrix
 	// If the calling client & permissions were included in UsernameToAddWithPermissions, these will be overwritten
