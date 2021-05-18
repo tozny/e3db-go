@@ -1442,19 +1442,27 @@ type Secret struct {
 }
 
 type CreateSecretOptions struct {
-	SecretType  string
-	SecretName  string
-	SecretValue string
-	Description string
-	FileName    string
-	RealmName   string
+	SecretType       string
+	SecretName       string
+	SecretValue      string
+	Description      string
+	FileName         string
+	RealmName        string
+	OwnerPermissions []string // optional
 }
 
 // CreateSecret makes a secret of the specified type and share it with a group containing the writer
-func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOptions) (*Secret, error) {
+func (c *ToznySDKV3) CreateSecret(ctx context.Context, secretDetails CreateSecretOptions) (*Secret, error) {
 	// once ToznySDKV3 is updated, this will be c.RealmName if secret.RealmName is empty
-	realmName := secret.RealmName
-	err := ValidateSecret(secret)
+	var realmName string
+	if secretDetails.RealmName != "" {
+		realmName = secretDetails.RealmName
+	} else if c.CurrentIdentity.Realm != "" {
+		realmName = c.CurrentIdentity.Realm
+	} else {
+		return nil, fmt.Errorf("CreateSecret: No realm name was provided.")
+	}
+	err := ValidateSecret(secretDetails)
 	if err != nil {
 		return nil, err
 	}
@@ -1462,38 +1470,43 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOption
 	if err != nil {
 		return nil, err
 	}
+	// Default permissions for the owner are share & read, but this will be replaced if the user specified permissions
+	permissions := []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
+	if len(secretDetails.OwnerPermissions) > 0 {
+		permissions = secretDetails.OwnerPermissions
+	}
 	namespaceOptions := NamespaceOptions{
 		RealmName: realmName,
 		Namespace: ownerClientID.String(),
 		SharingMatrix: map[uuid.UUID][]string{
-			ownerClientID: {storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability},
+			ownerClientID: permissions,
 		},
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
 	if err != nil {
 		return nil, err
 	}
-	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, secret.SecretType, secret.SecretName)
+	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, secretDetails.SecretType, secretDetails.SecretName)
 	timestamp := time.Now().String()
 	plain := map[string]string{
-		"secretType":  secret.SecretType,
-		"secretName":  secret.SecretName,
-		"description": secret.Description,
+		"secretType":  secretDetails.SecretType,
+		"secretName":  secretDetails.SecretName,
+		"description": secretDetails.Description,
 		"version":     timestamp,
 	}
 	var createdRecord *pdsClient.Record
-	if secret.SecretType == FileSecretType {
+	if secretDetails.SecretType == FileSecretType {
 		writeFileRequest := WriteFileOptions{
 			RecordType: recordType,
 			Plain:      plain,
-			FileName:   secret.FileName,
+			FileName:   secretDetails.FileName,
 		}
 		createdRecord, err = c.WriteFile(ctx, writeFileRequest)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		data := map[string]string{"secretValue": secret.SecretValue}
+		data := map[string]string{"secretValue": secretDetails.SecretValue}
 		createdRecord, err = c.WriteRecord(ctx, data, recordType, plain)
 		if err != nil {
 			return nil, err
@@ -1710,13 +1723,20 @@ func (c *ToznySDKV3) ShareRecordWithGroup(ctx context.Context, recordType string
 }
 
 type NamespaceOptions struct {
-	Namespace     string
-	RealmName     string
+	Namespace string
+	RealmName string
+	// SharingMatrix must include all clients who need to be in the group
+	// if the calling client is not included in the mapping, it will not have access to the group
 	SharingMatrix map[uuid.UUID][]string
 }
 
 // GetOrCreateNamespace creates the group for the namespace if it doesn't exist and returns the Group
+// SharingMatrix must include the calling client if they want to be able to interact with the group.
 func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, options NamespaceOptions) (*storageClient.Group, error) {
+	// If there is no one to share it with, don't create the group
+	if len(options.SharingMatrix) < 1 {
+		return nil, fmt.Errorf("Sharing matrix must include at least one mapping")
+	}
 	var group *storageClient.Group
 	groupName := fmt.Sprintf("tozny.secret.%s.%s", options.RealmName, options.Namespace)
 	listRequest := storageClient.ListGroupsRequest{
@@ -1914,7 +1934,7 @@ type ListSecretsOptions struct {
 }
 
 // ListSecrets returns a list of up to limit secrets that are shared with or owned by the identity
-func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions) (*ListedSecrets, error) {
+func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions) (*ListedSecrets, []error, error) {
 	sharedSecrets := &ListedSecrets{}
 	listRequest := storageClient.ListGroupsRequest{
 		ClientID:  uuid.MustParse(c.StorageClient.ClientID),
@@ -1923,12 +1943,14 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 	}
 	responseList, err := c.StorageClient.ListGroups(ctx, listRequest)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(responseList.Groups) < 1 {
-		return sharedSecrets, nil
+		return sharedSecrets, nil, nil
 	}
 	var sharedSecretList []Secret
+	// Collect errors that prevent listing specific secrets, but don't cause ListSecrets to terminate.
+	var processingErrors []error
 	sharedSecretIDs := make(map[string]bool)
 	for _, group := range responseList.Groups {
 		if !ValidToznySecretNamespace(group.Name) {
@@ -1940,8 +1962,10 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 		}
 		for {
 			listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+			// if group can't be accessed, add a processing error, but don't fail
 			if err != nil {
-				return nil, err
+				processingErrors = append(processingErrors, fmt.Errorf("Could not access group: %s with error %+v", listRequest.GroupID, err))
+				break
 			}
 			// Add records shared with this group to the list of secrets the user can view.
 			for _, record := range listGroupRecords.ResultList {
@@ -1957,13 +1981,19 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 					shared = "No"
 				}
 				// find the username for secret writer if it's someone else
+				writerID, err := uuid.Parse(record.Metadata.WriterID)
+				if err != nil {
+					processingErrors = append(processingErrors, fmt.Errorf("WriterID must be a UUID but is %s. Error: %+v", record.Metadata.WriterID, err))
+					continue
+				}
 				searchParams := identityClient.SearchRealmIdentitiesRequest{
 					RealmName:         options.RealmName,
-					IdentityClientIDs: []uuid.UUID{uuid.MustParse(record.Metadata.WriterID)},
+					IdentityClientIDs: []uuid.UUID{writerID},
 				}
 				identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
 				if err != nil {
-					return nil, err
+					processingErrors = append(processingErrors, fmt.Errorf("Error finding identity with clientID %s. Error: %+v", writerID, err))
+					continue
 				}
 				var username string
 				if len(identities.SearchedIdentitiesInformation) > 0 {
@@ -1973,8 +2003,10 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 				record.Metadata.Plain[SecretSharedMetadataKey] = shared
 				// Decrypt the record & add to the list of secrets
 				recordDecrypted, err := c.DecryptTextSecret(ctx, &record)
+				// If secret can't be decrypted, add a processing error and skip it
 				if err != nil {
-					return nil, err
+					processingErrors = append(processingErrors, fmt.Errorf("Could not decrypt record with ID %s. Error: %+v", record.Metadata.RecordID, err))
+					continue
 				}
 				secretDecrypted := c.MakeSecretResponse(recordDecrypted, group.GroupID.String(), username)
 				sharedSecretList = append(sharedSecretList, *secretDecrypted)
@@ -1986,12 +2018,11 @@ func (c *ToznySDKV3) ListSecrets(ctx context.Context, options ListSecretsOptions
 			} else {
 				listRequest.NextToken = listGroupRecords.NextToken
 			}
-
 		}
 	}
 	sharedSecrets.List = sharedSecretList
 	sharedSecrets.NextToken = fmt.Sprintf("%d", responseList.NextToken)
-	return sharedSecrets, nil
+	return sharedSecrets, processingErrors, nil
 }
 
 type ViewSecretOptions struct {
@@ -2082,7 +2113,7 @@ func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID 
 		Record:        secretRecord,
 		NamespaceId:   groupID,
 		OwnerUsername: ownerUsername,
-		// RealmName: c.RealmName,
+		RealmName:     c.CurrentIdentity.Realm,
 	}
 	if secret.SecretType == FileSecretType {
 		secret.FileName = secretRecord.Metadata.Plain[SecretFilenameMetadataKey]
@@ -2109,10 +2140,11 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	if err != nil {
 		return err
 	}
-	// add calling client to the sharing matrix
+	// Add default permissions for the calling client to the sharing matrix
+	// If the calling client & permissions were included in UsernameToAddWithPermissions, these will be overwritten
 	sharingMatrix[ownerClientID] = []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
 	for username, permissions := range params.UsernameToAddWithPermissions {
-		// find the clientID for the username to add
+		// Find the clientID for the username to add
 		searchParams := identityClient.SearchRealmIdentitiesRequest{
 			RealmName:         c.CurrentIdentity.Realm,
 			IdentityUsernames: []string{username},
@@ -2125,10 +2157,10 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 			return fmt.Errorf("ShareSecretWithUser: no identity found with username %s", username)
 		}
 		clientID = identities.SearchedIdentitiesInformation[0].ClientID
-		// add client to the sharing matrix
+		// Add client to the sharing matrix
 		sharingMatrix[clientID] = permissions
 	}
-	// find or create the group for sharing with UsernameToAdd
+	// Find or create the group for sharing with UsernameToAdd
 	namespaceOptions := NamespaceOptions{
 		RealmName:     c.CurrentIdentity.Realm,
 		Namespace:     fmt.Sprintf("%s.%s", c.StorageClient.ClientID, clientID),
@@ -2138,7 +2170,7 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	if err != nil {
 		return err
 	}
-	// share record type with group
+	// Share record type with group
 	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, params.SecretType, params.SecretName)
 	err = c.ShareRecordWithGroup(ctx, recordType, group)
 	if err != nil {

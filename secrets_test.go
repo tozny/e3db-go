@@ -42,7 +42,7 @@ func TestListSecrets(t *testing.T) {
 		Limit:     1000,
 		NextToken: 0,
 	}
-	listSecrets, err := sdk.ListSecrets(testCtx, listOptions)
+	listSecrets, _, err := sdk.ListSecrets(testCtx, listOptions)
 	if err != nil {
 		t.Fatalf("Could not list secrets: Err: %+v", err)
 	}
@@ -319,6 +319,16 @@ func TestShareSecretInvalidUsernameFails(t *testing.T) {
 	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
 	if err == nil {
 		t.Fatal("Should error since username doesn't exist\n")
+	}
+	// share secret with no one
+	shareOptions = ShareSecretInfo{
+		SecretName:                   secret.SecretName,
+		SecretType:                   secret.SecretType,
+		UsernameToAddWithPermissions: map[string][]string{},
+	}
+	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
+	if err == nil {
+		t.Fatal("Should error since no usernames were included to share with\n")
 	}
 }
 
