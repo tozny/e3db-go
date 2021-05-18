@@ -264,9 +264,11 @@ func TestShareSecretByUsernameSucceeds(t *testing.T) {
 	}
 	// id 1 shares the secret with id 2
 	shareOptions := ShareSecretInfo{
-		SecretName:    secretCreated.SecretName,
-		SecretType:    secretCreated.SecretType,
-		UsernameToAdd: username,
+		SecretName: secretCreated.SecretName,
+		SecretType: secretCreated.SecretType,
+		UsernameToAddWithPermissions: map[string][]string{
+			username: {"SHARE_CONTENT", "READ_CONTENT"},
+		},
 	}
 	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
 	if err != nil {
@@ -279,7 +281,7 @@ func TestShareSecretByUsernameSucceeds(t *testing.T) {
 	}
 	secretView, err := sdk2.ViewSecret(testCtx, viewOptions)
 	if err != nil {
-		t.Fatalf("Error viewing shared secret: Err: %+v", err)
+		t.Fatalf("Error viewing shared secret: %+v", err)
 	}
 	if secretReq.SecretValue != secretView.SecretValue {
 		t.Fatalf("SecretValue doesn't match. Created: %s Viewed: %s", secretCreated.Record.Data["secretValue"], secretView.Record.Data["secretValue"])
@@ -304,13 +306,15 @@ func TestShareSecretInvalidUsernameFails(t *testing.T) {
 	}
 	secret, err := sdk.ViewSecret(testCtx, viewOptions)
 	if err != nil {
-		t.Fatalf("Error viewing shared secret: Err: %+v", err)
+		t.Fatalf("Error viewing shared secret: %+v", err)
 	}
 	// share secret with a username that doesn't exist
 	shareOptions := ShareSecretInfo{
-		SecretName:    secret.SecretName,
-		SecretType:    secret.SecretType,
-		UsernameToAdd: "invalid-user",
+		SecretName: secret.SecretName,
+		SecretType: secret.SecretType,
+		UsernameToAddWithPermissions: map[string][]string{
+			"invalid-user": {"SHARE_CONTENT", "READ_CONTENT"},
+		},
 	}
 	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
 	if err == nil {

@@ -1458,10 +1458,16 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secret CreateSecretOption
 	if err != nil {
 		return nil, err
 	}
+	ownerClientID, err := uuid.Parse(c.StorageClient.ClientID)
+	if err != nil {
+		return nil, err
+	}
 	namespaceOptions := NamespaceOptions{
-		RealmName:      realmName,
-		Namespace:      c.StorageClient.ClientID,
-		ClientIDsToAdd: []uuid.UUID{uuid.MustParse(c.StorageClient.ClientID)},
+		RealmName: realmName,
+		Namespace: ownerClientID.String(),
+		SharingMatrix: map[uuid.UUID][]string{
+			ownerClientID: {storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability},
+		},
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
 	if err != nil {
@@ -1704,9 +1710,9 @@ func (c *ToznySDKV3) ShareRecordWithGroup(ctx context.Context, recordType string
 }
 
 type NamespaceOptions struct {
-	Namespace      string
-	RealmName      string
-	ClientIDsToAdd []uuid.UUID
+	Namespace     string
+	RealmName     string
+	SharingMatrix map[uuid.UUID][]string
 }
 
 // GetOrCreateNamespace creates the group for the namespace if it doesn't exist and returns the Group
@@ -1741,28 +1747,9 @@ func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, options Namespace
 			return nil, err
 		}
 		group = createGroupResponse
-		// make the capabilities -- for now, all members get read and share capabilities
-		groupMemberCapabilities := []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
 		// make new members from the clientIDs
 		memberRequest := []storageClient.GroupMember{}
-		// get membership keys for the calling client
-		membershipKeyRequest := storageClient.CreateMembershipKeyRequest{
-			GroupAdminID:      c.ClientID,
-			NewMemberID:       c.StorageClient.ClientID,
-			EncryptedGroupKey: group.EncryptedGroupKey,
-			ShareePublicKey:   c.StorageClient.EncryptionKeys.Public.Material,
-		}
-		membershipKeyResp, err := c.StorageClient.CreateGroupMembershipKey(ctx, membershipKeyRequest)
-		if err != nil {
-			return nil, err
-		}
-		// add calling client as group member
-		memberRequest = append(memberRequest, storageClient.GroupMember{
-			ClientID:        uuid.MustParse(c.StorageClient.ClientID),
-			MembershipKey:   membershipKeyResp,
-			CapabilityNames: groupMemberCapabilities,
-		})
-		for _, clientID := range options.ClientIDsToAdd {
+		for clientID, permissions := range options.SharingMatrix {
 			// get membership keys for the specific member
 			membershipKeyRequest := storageClient.CreateMembershipKeyRequest{
 				GroupAdminID:      c.ClientID,
@@ -1777,7 +1764,7 @@ func (c *ToznySDKV3) GetOrCreateNamespace(ctx context.Context, options Namespace
 			memberRequest = append(memberRequest, storageClient.GroupMember{
 				ClientID:        clientID,
 				MembershipKey:   membershipKeyResp,
-				CapabilityNames: groupMemberCapabilities,
+				CapabilityNames: permissions,
 			})
 		}
 		// add group members
@@ -2032,8 +2019,9 @@ func (c *ToznySDKV3) ViewSecret(ctx context.Context, options ViewSecretOptions) 
 		}
 		for {
 			listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+			// if calling client doesn't actually have access to the group, skip it
 			if err != nil {
-				return nil, err
+				break
 			}
 			for _, record := range listGroupRecords.ResultList {
 				if record.Metadata.RecordID == options.SecretID.String() {
@@ -2105,32 +2093,46 @@ func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID 
 }
 
 type ShareSecretInfo struct {
-	SecretName    string
-	SecretType    string
-	UsernameToAdd string
+	SecretName                   string
+	SecretType                   string
+	UsernameToAddWithPermissions map[string][]string
 }
 
 // ShareSecretWithUsername shares all versions of a specified secret with the user with UsernameToAdd
 func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSecretInfo) error {
-	if params.UsernameToAdd == "" {
-		return fmt.Errorf("Username to add must be specified.")
+	if len(params.UsernameToAddWithPermissions) == 0 {
+		return fmt.Errorf("ShareSecretWithUsername: Username to add must be provided.")
 	}
-	// find the clientIDs for each username
-	searchParams := identityClient.SearchRealmIdentitiesRequest{
-		RealmName:         c.CurrentIdentity.Realm,
-		IdentityUsernames: []string{params.UsernameToAdd},
-	}
-	identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
+	var clientID uuid.UUID
+	sharingMatrix := make(map[uuid.UUID][]string)
+	ownerClientID, err := uuid.Parse(c.StorageClient.ClientID)
 	if err != nil {
 		return err
 	}
-	if len(identities.SearchedIdentitiesInformation) < 1 {
-		return fmt.Errorf("ShareSecretWithUser: no identity found with username %s", params.UsernameToAdd)
+	// add calling client to the sharing matrix
+	sharingMatrix[ownerClientID] = []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
+	for username, permissions := range params.UsernameToAddWithPermissions {
+		// find the clientID for the username to add
+		searchParams := identityClient.SearchRealmIdentitiesRequest{
+			RealmName:         c.CurrentIdentity.Realm,
+			IdentityUsernames: []string{username},
+		}
+		identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
+		if err != nil {
+			return err
+		}
+		if len(identities.SearchedIdentitiesInformation) < 1 {
+			return fmt.Errorf("ShareSecretWithUser: no identity found with username %s", username)
+		}
+		clientID = identities.SearchedIdentitiesInformation[0].ClientID
+		// add client to the sharing matrix
+		sharingMatrix[clientID] = permissions
 	}
 	// find or create the group for sharing with UsernameToAdd
 	namespaceOptions := NamespaceOptions{
-		RealmName: c.CurrentIdentity.Realm,
-		Namespace: fmt.Sprintf("%s.%s", c.StorageClient.ClientID, identities.SearchedIdentitiesInformation[0].ClientID),
+		RealmName:     c.CurrentIdentity.Realm,
+		Namespace:     fmt.Sprintf("%s.%s", c.StorageClient.ClientID, clientID),
+		SharingMatrix: sharingMatrix,
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
 	if err != nil {
