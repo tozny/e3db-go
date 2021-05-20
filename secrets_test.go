@@ -262,6 +262,15 @@ func TestShareSecretByUsernameSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
 	}
+	// id 2 tries to view secret -- expect failure
+	viewOptions := ViewSecretOptions{
+		SecretID:   secretCreated.SecretID,
+		MaxSecrets: 1000,
+	}
+	_, err = sdk2.ViewSecret(testCtx, viewOptions)
+	if err == nil {
+		t.Fatal("Expected an error since secret isn't shared")
+	}
 	// id 1 shares the secret with id 2
 	shareOptions := ShareSecretInfo{
 		SecretName: secretCreated.SecretName,
@@ -274,11 +283,7 @@ func TestShareSecretByUsernameSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error sharing with username: Err: %+v\n", err)
 	}
-	// id 2 tries to view secret
-	viewOptions := ViewSecretOptions{
-		SecretID:   secretCreated.SecretID,
-		MaxSecrets: 1000,
-	}
+	// id 2 tries to view secret -- expect success
 	secretView, err := sdk2.ViewSecret(testCtx, viewOptions)
 	if err != nil {
 		t.Fatalf("Error viewing shared secret: %+v", err)
@@ -286,9 +291,24 @@ func TestShareSecretByUsernameSucceeds(t *testing.T) {
 	if secretReq.SecretValue != secretView.SecretValue {
 		t.Fatalf("SecretValue doesn't match. Created: %s Viewed: %s", secretCreated.Record.Data["secretValue"], secretView.Record.Data["secretValue"])
 	}
+	// id 1 unshares secret from id 2
+	unshareOptions := UnshareSecretInfo{
+		SecretName:       secretCreated.SecretName,
+		SecretType:       secretCreated.SecretType,
+		UsernameToRevoke: username,
+	}
+	err = sdk.UnshareSecretFromUsername(testCtx, unshareOptions)
+	if err != nil {
+		t.Fatalf("Unshare secret failed %+v", err)
+	}
+	// id 2 tries to view secret -- expect failure
+	_, err = sdk2.ViewSecret(testCtx, viewOptions)
+	if err == nil {
+		t.Fatal("Expected an error since secret isn't shared")
+	}
 }
 
-func TestShareSecretInvalidUsernameFails(t *testing.T) {
+func TestShareSecretInvalidOptionsFails(t *testing.T) {
 	request := TozIDLoginRequest{
 		Username:     username,
 		Password:     password,
@@ -329,6 +349,135 @@ func TestShareSecretInvalidUsernameFails(t *testing.T) {
 	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
 	if err == nil {
 		t.Fatal("Should error since no usernames were included to share with\n")
+	}
+}
+
+func TestUnshareSecretInvalidOptionsFails(t *testing.T) {
+	request := TozIDLoginRequest{
+		Username:     username,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	viewOptions := ViewSecretOptions{
+		SecretID:   uuid.MustParse(secret1ID),
+		MaxSecrets: 1000,
+	}
+	secret, err := sdk.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: %+v", err)
+	}
+	shareOptions := ShareSecretInfo{
+		SecretName: secret.SecretName,
+		SecretType: secret.SecretType,
+		UsernameToAddWithPermissions: map[string][]string{
+			username: {"SHARE_CONTENT", "READ_CONTENT"},
+		},
+	}
+	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
+	if err != nil {
+		t.Fatalf("Error sharing with username: Err: %+v\n", err)
+	}
+	// unshare secret with no username provided
+	unshareOptions := UnshareSecretInfo{
+		SecretName: secret.SecretName,
+		SecretType: secret.SecretType,
+	}
+	err = sdk.UnshareSecretFromUsername(testCtx, unshareOptions)
+	if err == nil {
+		t.Fatal("Should error since username doesn't exist\n")
+	}
+	// unshare secret from secret creator
+	unshareOptions = UnshareSecretInfo{
+		SecretName:       secret.SecretName,
+		SecretType:       secret.SecretType,
+		UsernameToRevoke: username,
+	}
+	err = sdk.UnshareSecretFromUsername(testCtx, unshareOptions)
+	if err == nil {
+		t.Fatal("Should error since no usernames were included to share with\n")
+	}
+}
+
+func TestUnshareSecretFromOwnerFails(t *testing.T) {
+	// login id 1
+	request := TozIDLoginRequest{
+		Username:     username2,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	// login id 2
+	request = TozIDLoginRequest{
+		Username:     username,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk2, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	secretReq := CreateSecretOptions{
+		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
+		SecretType:  CredentialSecretType,
+		SecretValue: uuid.New().String(),
+		Description: "a credential test",
+		RealmName:   realmName,
+	}
+	secret, err := sdk.CreateSecret(testCtx, secretReq)
+	if err != nil {
+		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
+	}
+	// Try to unshare the secret from the calling client
+	unshareOptions := UnshareSecretInfo{
+		SecretName:       secret.SecretName,
+		SecretType:       secret.SecretType,
+		UsernameToRevoke: username2,
+	}
+	err = sdk.UnshareSecretFromUsername(testCtx, unshareOptions)
+	if err == nil {
+		t.Fatal("Should error since username is the secret owner\n")
+	}
+	shareOptions := ShareSecretInfo{
+		SecretName: secret.SecretName,
+		SecretType: secret.SecretType,
+		UsernameToAddWithPermissions: map[string][]string{
+			username: {"READ_CONTENT"},
+		},
+	}
+	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
+	if err != nil {
+		t.Fatalf("Error sharing with username: Err: %+v\n", err)
+	}
+	viewOptions := ViewSecretOptions{
+		SecretID:   uuid.MustParse(secret.SecretID.String()),
+		MaxSecrets: 1000,
+	}
+	_, err = sdk.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: %+v", err)
+	}
+	// Viewer of secret tries to unshare the secret from the owner
+	unshareOptions = UnshareSecretInfo{
+		SecretName:       secret.SecretName,
+		SecretType:       secret.SecretType,
+		UsernameToRevoke: username2,
+	}
+	err = sdk2.UnshareSecretFromUsername(testCtx, unshareOptions)
+	if err == nil {
+		t.Fatal("Should error since username is the secret owner\n")
 	}
 }
 

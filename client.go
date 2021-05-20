@@ -2184,6 +2184,8 @@ type UnshareSecretInfo struct {
 	UsernameToRevoke string
 }
 
+// UnshareSecretFromUsername revokes read access to secrets of provided name & type for this specific user
+// Calling client must be the owner of the secret for this to succeed.
 func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, params UnshareSecretInfo) error {
 	if params.UsernameToRevoke == "" {
 		return fmt.Errorf("UnshareSecretFromUsername: Username to revoke must be provided")
@@ -2197,11 +2199,43 @@ func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, params Unsha
 	if err != nil {
 		return err
 	}
+	// Username doesn't match an identity, so return an error
 	if len(identities.SearchedIdentitiesInformation) < 1 {
-		return fmt.Errorf("UnshareSecretFromUser: no identity found with username %s", params.UsernameToRevoke)
+		return fmt.Errorf("UnshareSecretFromUsername: no identity found within realm with username %s", params.UsernameToRevoke)
 	}
-	fmt.Printf("ids: %+v", identities.SearchedIdentitiesInformation)
-
+	// Find the sharing group
+	revokeClientID := identities.SearchedIdentitiesInformation[0].ClientID
+	ownerClientID, err := uuid.Parse(c.StorageClient.ClientID)
+	if err != nil {
+		return fmt.Errorf("UnshareSecretFromUsername: Client ID must be a valid UUID, got %s", c.StorageClient.ClientID)
+	}
+	// return an error if user tries to unshare secret from self
+	if revokeClientID == ownerClientID {
+		return fmt.Errorf("UnshareSecretFromUsername: Cannot unshare secret from self")
+	}
+	groupName := fmt.Sprintf("tozny.secret.%s.%s.%s.%s.%s", c.CurrentIdentity.Realm, ownerClientID, revokeClientID, params.SecretName, params.SecretType)
+	listRequest := storageClient.ListGroupsRequest{
+		GroupNames: []string{groupName},
+	}
+	listGroupResponse, err := c.StorageClient.ListGroups(ctx, listRequest)
+	if err != nil {
+		return err
+	}
+	// Group does not exist, so secret isn't shared with this identity and unsharing fails.
+	if len(listGroupResponse.Groups) < 1 {
+		return fmt.Errorf("UnshareSecretWithUsername: Sharing group does not exist, so unsharing failed")
+	}
+	// Unshare secret's record type from the group
+	groupID := listGroupResponse.Groups[0].GroupID
+	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, params.SecretType, params.SecretName)
+	recordRemoveShareRequest := storageClient.RemoveRecordSharedWithGroupRequest{
+		GroupID:    groupID,
+		RecordType: recordType,
+	}
+	err = c.StorageClient.RemoveSharedRecordWithGroup(ctx, recordRemoveShareRequest)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
