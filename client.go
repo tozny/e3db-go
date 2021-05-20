@@ -2122,16 +2122,16 @@ func (c *ToznySDKV3) MakeSecretResponse(secretRecord *pdsClient.Record, groupID 
 	return secret
 }
 
-type ShareSecretInfo struct {
+type ShareSecretOptions struct {
 	SecretName                   string
 	SecretType                   string
 	UsernameToAddWithPermissions map[string][]string
 }
 
 // ShareSecretWithUsername shares all versions of a specified secret with the user with UsernameToAdd
-func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSecretInfo) error {
-	if len(params.UsernameToAddWithPermissions) == 0 {
-		return fmt.Errorf("ShareSecretWithUsername: Username to add must be provided.")
+func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, options ShareSecretOptions) error {
+	if len(options.UsernameToAddWithPermissions) != 1 {
+		return fmt.Errorf("ShareSecretWithUsername: One username to add must be provided.")
 	}
 	var clientID uuid.UUID
 	sharingMatrix := make(map[uuid.UUID][]string)
@@ -2142,7 +2142,7 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	// Add default permissions for the calling client to the sharing matrix
 	// If the calling client & permissions were included in UsernameToAddWithPermissions, these will be overwritten
 	sharingMatrix[ownerClientID] = []string{storageClient.ShareContentGroupCapability, storageClient.ReadContentGroupCapability}
-	for username, permissions := range params.UsernameToAddWithPermissions {
+	for username, permissions := range options.UsernameToAddWithPermissions {
 		// Find the clientID for the username to add
 		searchParams := identityClient.SearchRealmIdentitiesRequest{
 			RealmName:         c.CurrentIdentity.Realm,
@@ -2153,16 +2153,20 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 			return err
 		}
 		if len(identities.SearchedIdentitiesInformation) < 1 {
-			return fmt.Errorf("ShareSecretWithUser: no identity found with username %s", username)
+			return fmt.Errorf("ShareSecretWithUser: no identity found within realm %s with username %s", c.CurrentIdentity.Realm, username)
 		}
 		clientID = identities.SearchedIdentitiesInformation[0].ClientID
 		// Add client to the sharing matrix
 		sharingMatrix[clientID] = permissions
 	}
+	// If user tries to share secret with self, return without failure
+	if clientID == ownerClientID {
+		return nil
+	}
 	// Find or create the group for sharing with UsernameToAdd
 	namespaceOptions := NamespaceOptions{
 		RealmName:     c.CurrentIdentity.Realm,
-		Namespace:     fmt.Sprintf("%s.%s.%s.%s", c.StorageClient.ClientID, clientID, params.SecretName, params.SecretType),
+		Namespace:     fmt.Sprintf("%s.%s.%s.%s", c.StorageClient.ClientID, clientID, options.SecretName, options.SecretType),
 		SharingMatrix: sharingMatrix,
 	}
 	group, err := c.GetOrCreateNamespace(ctx, namespaceOptions)
@@ -2170,7 +2174,7 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 		return err
 	}
 	// Share record type with group
-	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, params.SecretType, params.SecretName)
+	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, options.SecretType, options.SecretName)
 	err = c.ShareRecordWithGroup(ctx, recordType, group)
 	if err != nil {
 		return err
@@ -2178,7 +2182,7 @@ func (c *ToznySDKV3) ShareSecretWithUsername(ctx context.Context, params ShareSe
 	return nil
 }
 
-type UnshareSecretInfo struct {
+type UnshareSecretOptions struct {
 	SecretName       string
 	SecretType       string
 	UsernameToRevoke string
@@ -2186,14 +2190,14 @@ type UnshareSecretInfo struct {
 
 // UnshareSecretFromUsername revokes read access to secrets of provided name & type for this specific user
 // Calling client must be the owner of the secret for this to succeed.
-func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, params UnshareSecretInfo) error {
-	if params.UsernameToRevoke == "" {
+func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, options UnshareSecretOptions) error {
+	if options.UsernameToRevoke == "" {
 		return fmt.Errorf("UnshareSecretFromUsername: Username to revoke must be provided")
 	}
 	// find the clientID for the username
 	searchParams := identityClient.SearchRealmIdentitiesRequest{
 		RealmName:         c.CurrentIdentity.Realm,
-		IdentityUsernames: []string{params.UsernameToRevoke},
+		IdentityUsernames: []string{options.UsernameToRevoke},
 	}
 	identities, err := c.E3dbIdentityClient.SearchRealmIdentities(ctx, searchParams)
 	if err != nil {
@@ -2201,7 +2205,7 @@ func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, params Unsha
 	}
 	// Username doesn't match an identity, so return an error
 	if len(identities.SearchedIdentitiesInformation) < 1 {
-		return fmt.Errorf("UnshareSecretFromUsername: no identity found within realm with username %s", params.UsernameToRevoke)
+		return fmt.Errorf("UnshareSecretFromUsername: no identity found within realm %s with username %s", c.CurrentIdentity.Realm, options.UsernameToRevoke)
 	}
 	// Find the sharing group
 	revokeClientID := identities.SearchedIdentitiesInformation[0].ClientID
@@ -2213,7 +2217,7 @@ func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, params Unsha
 	if revokeClientID == ownerClientID {
 		return fmt.Errorf("UnshareSecretFromUsername: Cannot unshare secret from self")
 	}
-	groupName := fmt.Sprintf("tozny.secret.%s.%s.%s.%s.%s", c.CurrentIdentity.Realm, ownerClientID, revokeClientID, params.SecretName, params.SecretType)
+	groupName := fmt.Sprintf("tozny.secret.%s.%s.%s.%s.%s", c.CurrentIdentity.Realm, ownerClientID, revokeClientID, options.SecretName, options.SecretType)
 	listRequest := storageClient.ListGroupsRequest{
 		GroupNames: []string{groupName},
 	}
@@ -2221,13 +2225,13 @@ func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, params Unsha
 	if err != nil {
 		return err
 	}
-	// Group does not exist, so secret isn't shared with this identity and unsharing fails.
+	// Group does not exist, so secret isn't shared with this identity and unsharing doesn't need to happen.
 	if len(listGroupResponse.Groups) < 1 {
-		return fmt.Errorf("UnshareSecretWithUsername: Sharing group does not exist, so unsharing failed")
+		return fmt.Errorf("UnshareSecretFromUsername: sharing group does not exist")
 	}
 	// Unshare secret's record type from the group
 	groupID := listGroupResponse.Groups[0].GroupID
-	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, params.SecretType, params.SecretName)
+	recordType := fmt.Sprintf("tozny.secret.%s.%s.%s", SecretUUID, options.SecretType, options.SecretName)
 	recordRemoveShareRequest := storageClient.RemoveRecordSharedWithGroupRequest{
 		GroupID:    groupID,
 		RecordType: recordType,
