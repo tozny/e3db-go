@@ -405,6 +405,10 @@ func TestUnshareSecretInvalidOptionsFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("Should error since username doesn't exist\n")
 	}
+	_, err = sdk.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing a secret that should still be shared: %+v", err)
+	}
 	// unshare secret from secret creator
 	unshareOptions = UnshareSecretOptions{
 		SecretName:       secret.SecretName,
@@ -414,6 +418,10 @@ func TestUnshareSecretInvalidOptionsFails(t *testing.T) {
 	err = sdk.UnshareSecretFromUsername(testCtx, unshareOptions)
 	if err == nil {
 		t.Fatal("Should error since no usernames were included to share with\n")
+	}
+	_, err = sdk.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing a secret that should still be shared: %+v", err)
 	}
 }
 
@@ -503,7 +511,7 @@ func TestUnshareTwiceSucceeds(t *testing.T) {
 	}
 	// id 2 tries to view secret -- expect success
 	viewOptions := ViewSecretOptions{
-		SecretID:   uuid.MustParse(secret1ID),
+		SecretID:   secret.SecretID,
 		MaxSecrets: 1000,
 	}
 	_, err = sdk2.ViewSecret(testCtx, viewOptions)
