@@ -2302,15 +2302,16 @@ type UnshareBeforeDeleteOptions struct {
 
 // UnshareSecretBeforeDelete unshares the secret with SecretID from every group it's shared with
 // and deletes the group if it contains no other secrets.
-func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options UnshareBeforeDeleteOptions) error {
+func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options UnshareBeforeDeleteOptions) ([]error, error) {
 	listRequest := storageClient.ListGroupsRequest{
 		ClientID: options.CallerClientID,
 	}
 	listGroupResponse, err := c.StorageClient.ListGroups(ctx, listRequest)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	secretID := options.SecretID
+	var processingErrors []error
 	// Check each group the calling client belongs to for the secret
 	for _, group := range listGroupResponse.Groups {
 		if !ValidToznySecretNamespace(group.Name) {
@@ -2323,7 +2324,9 @@ func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options Unsh
 			// Get all the records shared with the group
 			listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
 			if err != nil {
-				return err
+				msg := fmt.Errorf("UnshareSecretBeforeDelete: could not access group %s. Err: %+v", group.GroupID, err)
+				processingErrors = append(processingErrors, msg)
+				continue
 			}
 			numberRecordsInGroup := len(listGroupRecords.ResultList)
 			// if the secret is one of the records in the group, unshare it
@@ -2336,7 +2339,8 @@ func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options Unsh
 					}
 					err = c.StorageClient.RemoveSharedRecordWithGroup(ctx, recordRemoveShareRequest)
 					if err != nil {
-						return err
+						msg := fmt.Errorf("UnshareSecretBeforeDelete: failed to remove secret %s from group %s. Err: %+v", secretID, group.GroupID, err)
+						processingErrors = append(processingErrors, msg)
 					}
 					// if it's the only record in the group, delete the group
 					if numberRecordsInGroup < 2 {
@@ -2347,7 +2351,8 @@ func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options Unsh
 						}
 						err = c.StorageClient.DeleteGroup(ctx, deleteGroupOptions)
 						if err != nil {
-							return err
+							msg := fmt.Errorf("UnshareSecretBeforeDelete: failed to delete empty group %s. Err: %+v", group.GroupID, err)
+							processingErrors = append(processingErrors, msg)
 						}
 					}
 					break
@@ -2360,7 +2365,7 @@ func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options Unsh
 			}
 		}
 	}
-	return nil
+	return processingErrors, nil
 }
 
 type DeleteSecretOptions struct {
@@ -2370,13 +2375,13 @@ type DeleteSecretOptions struct {
 }
 
 // DeleteSecret deletes the secret with SecretID. It requires that the calling client is the secret owner.
-func (c *ToznySDKV3) DeleteSecret(ctx context.Context, options DeleteSecretOptions) error {
+func (c *ToznySDKV3) DeleteSecret(ctx context.Context, options DeleteSecretOptions) ([]error, error) {
 	callerClientID, err := uuid.Parse(c.StorageClient.ClientID)
 	if err != nil {
-		return fmt.Errorf("DeleteSecret: Client ID must be a valid UUID, got %s", c.StorageClient.ClientID)
+		return nil, fmt.Errorf("DeleteSecret: Client ID must be a valid UUID, got %s", c.StorageClient.ClientID)
 	}
 	if callerClientID.String() != options.WriterID {
-		return fmt.Errorf("DeleteSecret: Calling client %s does not own secret %s", options.WriterID, options.SecretID)
+		return nil, fmt.Errorf("DeleteSecret: Calling client %s does not own secret %s", options.WriterID, options.SecretID)
 	}
 	sharedListOptions := UnshareBeforeDeleteOptions{
 		SecretID:       options.SecretID,
@@ -2384,9 +2389,9 @@ func (c *ToznySDKV3) DeleteSecret(ctx context.Context, options DeleteSecretOptio
 		Type:           options.RecordType,
 	}
 	// Unshare the secret from all groups it's shared with
-	err = c.UnshareSecretBeforeDelete(ctx, sharedListOptions)
+	processingErrors, err := c.UnshareSecretBeforeDelete(ctx, sharedListOptions)
 	if err != nil {
-		return err
+		return processingErrors, err
 	}
 	deleteRecordOptions := pdsClient.DeleteRecordRequest{
 		RecordID: options.SecretID.String(),
@@ -2394,9 +2399,9 @@ func (c *ToznySDKV3) DeleteSecret(ctx context.Context, options DeleteSecretOptio
 	// Delete the secret
 	err = c.E3dbPDSClient.DeleteRecord(ctx, deleteRecordOptions)
 	if err != nil {
-		return err
+		return processingErrors, err
 	}
-	return nil
+	return processingErrors, nil
 }
 
 // ExecuteSearch takes the given request and returns all records that match that request. Record data for non-files is decrypted. Files must be downloaded separately

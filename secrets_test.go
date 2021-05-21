@@ -161,7 +161,7 @@ func TestCreateAndViewSecretSucceeds(t *testing.T) {
 		SecretID:   secretCreated.SecretID,
 		RecordType: secretCreated.Record.Metadata.Type,
 	}
-	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	_, err = sdk.DeleteSecret(testCtx, deleteOptions)
 	if err != nil {
 		t.Fatalf("Deleting the secret failed: %+v", err)
 	}
@@ -239,7 +239,7 @@ func TestCreateAndReadFileSecretSucceeds(t *testing.T) {
 		SecretID:   createdSecret.SecretID,
 		RecordType: createdSecret.Record.Metadata.Type,
 	}
-	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	_, err = sdk.DeleteSecret(testCtx, deleteOptions)
 	if err != nil {
 		t.Fatalf("Deleting the secret failed: %+v", err)
 	}
@@ -337,7 +337,7 @@ func TestShareSecretByUsernameSucceeds(t *testing.T) {
 		SecretID:   secretView.SecretID,
 		RecordType: secretView.Record.Metadata.Type,
 	}
-	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	_, err = sdk.DeleteSecret(testCtx, deleteOptions)
 	if err != nil {
 		t.Fatalf("Deleting the secret failed: %+v", err)
 	}
@@ -500,7 +500,7 @@ func TestUnshareSecretFromOwnerFails(t *testing.T) {
 		SecretID:   secret.SecretID,
 		RecordType: secret.Record.Metadata.Type,
 	}
-	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	_, err = sdk.DeleteSecret(testCtx, deleteOptions)
 	if err != nil {
 		t.Fatalf("Deleting the secret failed: %+v", err)
 	}
@@ -584,7 +584,7 @@ func TestUnshareTwiceSucceeds(t *testing.T) {
 		SecretID:   secret.SecretID,
 		RecordType: secret.Record.Metadata.Type,
 	}
-	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	_, err = sdk.DeleteSecret(testCtx, deleteOptions)
 	if err != nil {
 		t.Fatalf("Deleting the secret failed: %+v", err)
 	}
@@ -658,7 +658,7 @@ func TestDeleteSecretSucceeds(t *testing.T) {
 		SecretID:   secret.SecretID,
 		RecordType: secret.Record.Metadata.Type,
 	}
-	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	_, err = sdk.DeleteSecret(testCtx, deleteOptions)
 	if err != nil {
 		t.Fatalf("Delete failed: %+v", err)
 	}
@@ -740,7 +740,7 @@ func TestNonOwnerDeleteSecretFails(t *testing.T) {
 		SecretID:   secret.SecretID,
 		RecordType: secret.Record.Metadata.Type,
 	}
-	err = sdk2.DeleteSecret(testCtx, deleteOptions)
+	_, err = sdk2.DeleteSecret(testCtx, deleteOptions)
 	if err == nil {
 		t.Fatal("DeleteSecret should have failed because not called by secret owner")
 	}
@@ -754,7 +754,7 @@ func TestNonOwnerDeleteSecretFails(t *testing.T) {
 		t.Fatalf("Error viewing shared secret: %+v", err)
 	}
 	// call delete secret with the owner
-	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	_, err = sdk.DeleteSecret(testCtx, deleteOptions)
 	if err != nil {
 		t.Fatalf("Could not delete secret: %+v", err)
 	}
