@@ -2243,6 +2243,111 @@ func (c *ToznySDKV3) UnshareSecretFromUsername(ctx context.Context, options Unsh
 	return nil
 }
 
+type UnshareBeforeDeleteOptions struct {
+	SecretID       uuid.UUID
+	CallerClientID uuid.UUID
+	Type           string
+}
+
+// UnshareSecretBeforeDelete unshares the secret with SecretID from every group it's shared with
+// and deletes the group if it contains no other secrets.
+func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options UnshareBeforeDeleteOptions) error {
+	listRequest := storageClient.ListGroupsRequest{
+		ClientID: options.CallerClientID,
+	}
+	listGroupResponse, err := c.StorageClient.ListGroups(ctx, listRequest)
+	if err != nil {
+		return err
+	}
+	secretID := options.SecretID
+	// Check each group the calling client belongs to for the secret
+	for _, group := range listGroupResponse.Groups {
+		if !ValidToznySecretNamespace(group.Name) {
+			continue
+		}
+		listRequest := storageClient.ListGroupRecordsRequest{
+			GroupID: group.GroupID,
+		}
+		for {
+			// Get all the records shared with the group
+			listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+			if err != nil {
+				return err
+			}
+			numberRecordsInGroup := len(listGroupRecords.ResultList)
+			// if the secret is one of the records in the group, unshare it
+			for _, record := range listGroupRecords.ResultList {
+				if record.Metadata.RecordID == secretID.String() {
+					// unshare the record from the group
+					recordRemoveShareRequest := storageClient.RemoveRecordSharedWithGroupRequest{
+						GroupID:    group.GroupID,
+						RecordType: options.Type,
+					}
+					err = c.StorageClient.RemoveSharedRecordWithGroup(ctx, recordRemoveShareRequest)
+					if err != nil {
+						return err
+					}
+					// if it's the only record in the group, delete the group
+					if numberRecordsInGroup < 2 {
+						deleteGroupOptions := storageClient.DeleteGroupRequest{
+							GroupID:   group.GroupID,
+							AccountID: group.AccountID,
+							ClientID:  options.CallerClientID,
+						}
+						err = c.StorageClient.DeleteGroup(ctx, deleteGroupOptions)
+						if err != nil {
+							return err
+						}
+					}
+					break
+				}
+			}
+			if listGroupRecords.NextToken == "0" {
+				break
+			} else {
+				listRequest.NextToken = listGroupRecords.NextToken
+			}
+		}
+	}
+	return nil
+}
+
+type DeleteSecretOptions struct {
+	WriterID   string
+	SecretID   uuid.UUID
+	RecordType string
+}
+
+// DeleteSecret deletes the secret with SecretID. It requires that the calling client is the secret owner.
+func (c *ToznySDKV3) DeleteSecret(ctx context.Context, options DeleteSecretOptions) error {
+	callerClientID, err := uuid.Parse(c.StorageClient.ClientID)
+	if err != nil {
+		return fmt.Errorf("DeleteSecret: Client ID must be a valid UUID, got %s", c.StorageClient.ClientID)
+	}
+	if callerClientID.String() != options.WriterID {
+		return fmt.Errorf("DeleteSecret: Calling client %s does not own secret %s", options.WriterID, options.SecretID)
+	}
+	sharedListOptions := UnshareBeforeDeleteOptions{
+		SecretID:       options.SecretID,
+		CallerClientID: callerClientID,
+		Type:           options.RecordType,
+	}
+	// Unshare the secret from all groups it's shared with
+	err = c.UnshareSecretBeforeDelete(ctx, sharedListOptions)
+	if err != nil {
+		return err
+	}
+	deleteRecordOptions := pdsClient.DeleteRecordRequest{
+		RecordID: options.SecretID.String(),
+	}
+	// Delete the secret
+	err = c.E3dbPDSClient.DeleteRecord(ctx, deleteRecordOptions)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // ExecuteSearch takes the given request and returns all records that match that request. Record data for non-files is decrypted. Files must be downloaded separately
 func (c *ToznySDKV3) ExecuteSearch(executorRequest *searchExecutorClient.ExecutorQueryRequest) (*[]pdsClient.ListedRecord, error) {
 	client := searchExecutorClient.New(c.config)

@@ -155,6 +155,16 @@ func TestCreateAndViewSecretSucceeds(t *testing.T) {
 	if secretReq.SecretValue != secretView.SecretValue {
 		t.Fatalf("SecretValue doesn't match. Created: %s Viewed: %s", secretCreated.Record.Data["secretValue"], secretView.Record.Data["secretValue"])
 	}
+	// clean up secret
+	deleteOptions := DeleteSecretOptions{
+		WriterID:   secretCreated.Record.Metadata.WriterID,
+		SecretID:   secretCreated.SecretID,
+		RecordType: secretCreated.Record.Metadata.Type,
+	}
+	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	if err != nil {
+		t.Fatalf("Deleting the secret failed: %+v", err)
+	}
 }
 
 func TestCreateAndReadFileSecretSucceeds(t *testing.T) {
@@ -222,6 +232,21 @@ func TestCreateAndReadFileSecretSucceeds(t *testing.T) {
 	compare := bytes.Equal(plaintext, decrypted)
 	if !compare {
 		t.Fatalf("%s and %s files do not match", plaintextFileName, decryptedFileName)
+	}
+	// clean up secret
+	deleteOptions := DeleteSecretOptions{
+		WriterID:   createdSecret.Record.Metadata.WriterID,
+		SecretID:   createdSecret.SecretID,
+		RecordType: createdSecret.Record.Metadata.Type,
+	}
+	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	if err != nil {
+		t.Fatalf("Deleting the secret failed: %+v", err)
+	}
+	// try to read the file
+	err = sdk.ReadFile(testCtx, readFileOptions)
+	if err == nil {
+		t.Fatal("Reading file should have failed as secret was deleted")
 	}
 }
 
@@ -305,6 +330,16 @@ func TestShareSecretByUsernameSucceeds(t *testing.T) {
 	_, err = sdk2.ViewSecret(testCtx, viewOptions)
 	if err == nil {
 		t.Fatal("Expected an error since secret isn't shared")
+	}
+	// clean up secret
+	deleteOptions := DeleteSecretOptions{
+		WriterID:   secretView.Record.Metadata.WriterID,
+		SecretID:   secretView.SecretID,
+		RecordType: secretView.Record.Metadata.Type,
+	}
+	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	if err != nil {
+		t.Fatalf("Deleting the secret failed: %+v", err)
 	}
 }
 
@@ -451,6 +486,16 @@ func TestUnshareSecretFromOwnerFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("Should error since username is the secret owner\n")
 	}
+	// clean up secret
+	deleteOptions := DeleteSecretOptions{
+		WriterID:   secret.Record.Metadata.WriterID,
+		SecretID:   secret.SecretID,
+		RecordType: secret.Record.Metadata.Type,
+	}
+	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	if err != nil {
+		t.Fatalf("Deleting the secret failed: %+v", err)
+	}
 }
 
 func TestUnshareTwiceSucceeds(t *testing.T) {
@@ -503,7 +548,7 @@ func TestUnshareTwiceSucceeds(t *testing.T) {
 	}
 	// id 2 tries to view secret -- expect success
 	viewOptions := ViewSecretOptions{
-		SecretID:   uuid.MustParse(secret1ID),
+		SecretID:   secret.SecretID,
 		MaxSecrets: 1000,
 	}
 	_, err = sdk2.ViewSecret(testCtx, viewOptions)
@@ -524,6 +569,186 @@ func TestUnshareTwiceSucceeds(t *testing.T) {
 	err = sdk.UnshareSecretFromUsername(testCtx, unshareOptions)
 	if err != nil {
 		t.Fatalf("Unshare secret again failed %+v", err)
+	}
+	// clean up secret
+	deleteOptions := DeleteSecretOptions{
+		WriterID:   secret.Record.Metadata.WriterID,
+		SecretID:   secret.SecretID,
+		RecordType: secret.Record.Metadata.Type,
+	}
+	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	if err != nil {
+		t.Fatalf("Deleting the secret failed: %+v", err)
+	}
+}
+
+func TestDeleteSecretSucceeds(t *testing.T) {
+	// login id 1
+	request := TozIDLoginRequest{
+		Username:     username2,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	// login id 2
+	request = TozIDLoginRequest{
+		Username:     username,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk2, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	// create the secret
+	secretReq := CreateSecretOptions{
+		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
+		SecretType:  CredentialSecretType,
+		SecretValue: uuid.New().String(),
+		Description: "a credential test",
+		RealmName:   realmName,
+	}
+	secret, err := sdk.CreateSecret(testCtx, secretReq)
+	if err != nil {
+		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
+	}
+	// share the secret with another id
+	shareOptions := ShareSecretOptions{
+		SecretName: secret.SecretName,
+		SecretType: secret.SecretType,
+		UsernameToAddWithPermissions: map[string][]string{
+			username: {"READ_CONTENT"},
+		},
+	}
+	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
+	if err != nil {
+		t.Fatalf("Error sharing with username: Err: %+v\n", err)
+	}
+	viewOptions := ViewSecretOptions{
+		SecretID:   secret.SecretID,
+		MaxSecrets: 1000,
+	}
+	// check that both identities can view the secret
+	_, err = sdk.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: %+v", err)
+	}
+	_, err = sdk2.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: %+v", err)
+	}
+	// call delete secret
+	deleteOptions := DeleteSecretOptions{
+		WriterID:   secret.Record.Metadata.WriterID,
+		SecretID:   secret.SecretID,
+		RecordType: secret.Record.Metadata.Type,
+	}
+	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	if err != nil {
+		t.Fatalf("Delete failed: %+v", err)
+	}
+	// check that neither identity can view the secret
+	_, err = sdk.ViewSecret(testCtx, viewOptions)
+	if err == nil {
+		t.Fatal("Secret is still viewable but should be deleted")
+	}
+	_, err = sdk2.ViewSecret(testCtx, viewOptions)
+	if err == nil {
+		t.Fatal("Secret is still viewable but should be deleted")
+	}
+}
+
+func TestNonOwnerDeleteSecretFails(t *testing.T) {
+	// login id 1
+	request := TozIDLoginRequest{
+		Username:     username2,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	// login id 2
+	request = TozIDLoginRequest{
+		Username:     username,
+		Password:     password,
+		RealmName:    realmName,
+		APIBaseURL:   baseURL,
+		LoginHandler: mfaHandler,
+	}
+	sdk2, err := GetSDKV3ForTozIDUser(request)
+	if err != nil {
+		t.Fatalf("Could not log in %+v", err)
+	}
+	secretReq := CreateSecretOptions{
+		SecretName:  fmt.Sprintf("client-%s", uuid.New().String()),
+		SecretType:  CredentialSecretType,
+		SecretValue: uuid.New().String(),
+		Description: "a credential test",
+		RealmName:   realmName,
+	}
+	secret, err := sdk.CreateSecret(testCtx, secretReq)
+	if err != nil {
+		t.Fatalf("Could not create secret: Req: %+v Err: %+v", secretReq, err)
+	}
+	// share the secret with another id
+	shareOptions := ShareSecretOptions{
+		SecretName: secret.SecretName,
+		SecretType: secret.SecretType,
+		UsernameToAddWithPermissions: map[string][]string{
+			username: {"READ_CONTENT"},
+		},
+	}
+	err = sdk.ShareSecretWithUsername(testCtx, shareOptions)
+	if err != nil {
+		t.Fatalf("Error sharing with username: Err: %+v\n", err)
+	}
+	viewOptions := ViewSecretOptions{
+		SecretID:   secret.SecretID,
+		MaxSecrets: 1000,
+	}
+	// check that both identities can view the secret
+	_, err = sdk.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: %+v", err)
+	}
+	_, err = sdk2.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: %+v", err)
+	}
+	// call delete secret with non-owner
+	deleteOptions := DeleteSecretOptions{
+		WriterID:   secret.Record.Metadata.WriterID,
+		SecretID:   secret.SecretID,
+		RecordType: secret.Record.Metadata.Type,
+	}
+	err = sdk2.DeleteSecret(testCtx, deleteOptions)
+	if err == nil {
+		t.Fatal("DeleteSecret should have failed because not called by secret owner")
+	}
+	// check that both identities can still view the secret
+	_, err = sdk.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: %+v", err)
+	}
+	_, err = sdk2.ViewSecret(testCtx, viewOptions)
+	if err != nil {
+		t.Fatalf("Error viewing shared secret: %+v", err)
+	}
+	// call delete secret with the owner
+	err = sdk.DeleteSecret(testCtx, deleteOptions)
+	if err != nil {
+		t.Fatalf("Could not delete secret: %+v", err)
 	}
 }
 
