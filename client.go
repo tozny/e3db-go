@@ -2339,6 +2339,7 @@ func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options Unsh
 			msg := fmt.Errorf("UnshareSecretBeforeDelete: failed to remove secret %s from group %s. Err: %+v", secretID, group.GroupID, err)
 			processingErrors = append(processingErrors, msg)
 		}
+		// If the group only contains the secret, delete the group
 		if numberRecordsInGroup == 1 && listGroupRecords.ResultList[0].Metadata.RecordID == secretID.String() {
 			deleteGroupOptions := storageClient.DeleteGroupRequest{
 				GroupID:   group.GroupID,
