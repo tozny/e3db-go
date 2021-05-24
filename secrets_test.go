@@ -758,6 +758,10 @@ func TestNonOwnerDeleteSecretFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not delete secret: %+v", err)
 	}
+	_, err = sdk.ViewSecret(testCtx, viewOptions)
+	if err == nil {
+		t.Fatalf("ViewSecret should fail if the secret was deleted properly.")
+	}
 }
 
 func mfaHandler(sessionResponse *IdentitySessionIntermediateResponse) (LoginActionData, error) {

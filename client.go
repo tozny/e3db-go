@@ -2318,50 +2318,37 @@ func (c *ToznySDKV3) UnshareSecretBeforeDelete(ctx context.Context, options Unsh
 			continue
 		}
 		listRequest := storageClient.ListGroupRecordsRequest{
-			GroupID: group.GroupID,
+			GroupID:   group.GroupID,
+			WriterIDs: []string{options.CallerClientID.String()},
 		}
-		for {
-			// Get all the records shared with the group
-			listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+		// Get all the records shared with the group
+		listGroupRecords, err := c.StorageClient.GetSharedWithGroup(ctx, listRequest)
+		if err != nil {
+			msg := fmt.Errorf("UnshareSecretBeforeDelete: could not access group %s. Err: %+v", group.GroupID, err)
+			processingErrors = append(processingErrors, msg)
+			continue
+		}
+		numberRecordsInGroup := len(listGroupRecords.ResultList)
+		// unshare the record from the group
+		recordRemoveShareRequest := storageClient.RemoveRecordSharedWithGroupRequest{
+			GroupID:    group.GroupID,
+			RecordType: options.Type,
+		}
+		err = c.StorageClient.RemoveSharedRecordWithGroup(ctx, recordRemoveShareRequest)
+		if err != nil {
+			msg := fmt.Errorf("UnshareSecretBeforeDelete: failed to remove secret %s from group %s. Err: %+v", secretID, group.GroupID, err)
+			processingErrors = append(processingErrors, msg)
+		}
+		if numberRecordsInGroup == 1 && listGroupRecords.ResultList[0].Metadata.RecordID == secretID.String() {
+			deleteGroupOptions := storageClient.DeleteGroupRequest{
+				GroupID:   group.GroupID,
+				AccountID: group.AccountID,
+				ClientID:  options.CallerClientID,
+			}
+			err = c.StorageClient.DeleteGroup(ctx, deleteGroupOptions)
 			if err != nil {
-				msg := fmt.Errorf("UnshareSecretBeforeDelete: could not access group %s. Err: %+v", group.GroupID, err)
+				msg := fmt.Errorf("UnshareSecretBeforeDelete: failed to delete empty group %s. Err: %+v", group.GroupID, err)
 				processingErrors = append(processingErrors, msg)
-				continue
-			}
-			numberRecordsInGroup := len(listGroupRecords.ResultList)
-			// if the secret is one of the records in the group, unshare it
-			for _, record := range listGroupRecords.ResultList {
-				if record.Metadata.RecordID == secretID.String() {
-					// unshare the record from the group
-					recordRemoveShareRequest := storageClient.RemoveRecordSharedWithGroupRequest{
-						GroupID:    group.GroupID,
-						RecordType: options.Type,
-					}
-					err = c.StorageClient.RemoveSharedRecordWithGroup(ctx, recordRemoveShareRequest)
-					if err != nil {
-						msg := fmt.Errorf("UnshareSecretBeforeDelete: failed to remove secret %s from group %s. Err: %+v", secretID, group.GroupID, err)
-						processingErrors = append(processingErrors, msg)
-					}
-					// if it's the only record in the group, delete the group
-					if numberRecordsInGroup < 2 {
-						deleteGroupOptions := storageClient.DeleteGroupRequest{
-							GroupID:   group.GroupID,
-							AccountID: group.AccountID,
-							ClientID:  options.CallerClientID,
-						}
-						err = c.StorageClient.DeleteGroup(ctx, deleteGroupOptions)
-						if err != nil {
-							msg := fmt.Errorf("UnshareSecretBeforeDelete: failed to delete empty group %s. Err: %+v", group.GroupID, err)
-							processingErrors = append(processingErrors, msg)
-						}
-					}
-					break
-				}
-			}
-			if listGroupRecords.NextToken == "0" {
-				break
-			} else {
-				listRequest.NextToken = listGroupRecords.NextToken
 			}
 		}
 	}
@@ -2380,6 +2367,7 @@ func (c *ToznySDKV3) DeleteSecret(ctx context.Context, options DeleteSecretOptio
 	if err != nil {
 		return nil, fmt.Errorf("DeleteSecret: Client ID must be a valid UUID, got %s", c.StorageClient.ClientID)
 	}
+	// Check that the person trying to delete the secret is the owner. If not, return an error
 	if callerClientID.String() != options.WriterID {
 		return nil, fmt.Errorf("DeleteSecret: Calling client %s does not own secret %s", options.WriterID, options.SecretID)
 	}
