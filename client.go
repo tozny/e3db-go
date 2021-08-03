@@ -32,6 +32,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1490,7 +1491,7 @@ func (c *ToznySDKV3) CreateSecret(ctx context.Context, secretDetails CreateSecre
 		SecretName: secretDetails.SecretName,
 	}
 	recordType := GetRecordType(recordTypeOptions)
-	timestamp := time.Now().String()
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/int64(time.Millisecond))
 	plain := map[string]string{
 		"secretType":  secretDetails.SecretType,
 		"secretName":  secretDetails.SecretName,
@@ -1552,7 +1553,7 @@ func (c *ToznySDKV3) WriteFile(ctx context.Context, options WriteFileOptions) (*
 			fmt.Printf("WriteFile: Could not delete %s: %+v", encryptionInfo.EncryptedFileName, err)
 		}
 	}()
-	options.Plain[SecretFilenameMetadataKey] = options.FileName
+	options.Plain[SecretFilenameMetadataKey] = filepath.Base(options.FileName)
 	sizeKB := encryptionInfo.Size / 1024
 	if sizeKB >= 1 {
 		options.Plain[SecretFileSizeMetadataKey] = fmt.Sprintf("%d", sizeKB)
