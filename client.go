@@ -681,6 +681,7 @@ type ToznySDKV3 struct {
 	*identityClient.E3dbIdentityClient
 	*storageClient.StorageClient
 	*pdsClient.E3dbPDSClient
+	*accountClient.E3dbAccountClientV2
 	// Account public authentication material for creating and deriving account credentials
 	AccountUsername string
 	// Account private authentication material for creating and deriving account credentials
@@ -713,22 +714,24 @@ type ToznySDKConfig struct {
 // NewToznySDK returns a new instance of the ToznySDK initialized with the provided
 // config or error (if any).
 func NewToznySDKV3(config ToznySDKConfig) (*ToznySDKV3, error) {
+	accountServiceV2Client := accountClient.NewV2(config.ClientConfig)
 	accountServiceClient := accountClient.New(config.ClientConfig)
 	identityClient := identityClient.New(config.ClientConfig)
 	storageClient := storageClient.New(config.ClientConfig)
 	pdsClient := pdsClient.New(config.ClientConfig)
 
 	return &ToznySDKV3{
-		E3dbAccountClient:  &accountServiceClient,
-		E3dbIdentityClient: &identityClient,
-		StorageClient:      &storageClient,
-		E3dbPDSClient:      &pdsClient,
-		AccountUsername:    config.AccountUsername,
-		AccountPassword:    config.AccountPassword,
-		APIEndpoint:        config.APIEndpoint,
-		ClientID:           config.ClientID,
-		CurrentIdentity:    config.TozIDSessionIdentityData,
-		config:             config.ClientConfig,
+		E3dbAccountClient:   &accountServiceClient,
+		E3dbAccountClientV2: &accountServiceV2Client,
+		E3dbIdentityClient:  &identityClient,
+		StorageClient:       &storageClient,
+		E3dbPDSClient:       &pdsClient,
+		AccountUsername:     config.AccountUsername,
+		AccountPassword:     config.AccountPassword,
+		APIEndpoint:         config.APIEndpoint,
+		ClientID:            config.ClientID,
+		CurrentIdentity:     config.TozIDSessionIdentityData,
+		config:              config.ClientConfig,
 	}, nil
 }
 
@@ -1139,6 +1142,76 @@ func (c *ToznySDKV3) Register(ctx context.Context, name string, email string, pa
 		Client:    &account,
 	}
 	return createResponse, nil
+}
+
+func (c *ToznySDKV3) DeriveAccountCredentials(ctx context.Context, name string, email string, password string, apiURL string) (accountClient.CreateAccountRequest, error) {
+	if apiURL == "" {
+		apiURL = DefaultStorageURL
+	}
+	const (
+		pwEncSalt  = "pwEncSalt"
+		pwAuthSalt = "pwAuthSalt"
+		pkEncSalt  = "pkEncSalt"
+		pkAuthSalt = "pkAuthSalt"
+	)
+	var createRequest accountClient.CreateAccountRequest
+	paperKeyRaw := make([]byte, 64)
+	_, err := rand.Read(paperKeyRaw)
+	if err != nil {
+		return createRequest, fmt.Errorf("reading bytes for paper key: %v", err)
+	}
+	paperKey := base64.RawURLEncoding.EncodeToString(paperKeyRaw)
+
+	salts := make(map[string][]byte, 4)
+	for _, name := range []string{pwEncSalt, pwAuthSalt, pkEncSalt, pkAuthSalt} {
+		salt := make([]byte, e3dbClients.SaltSize)
+		_, err = rand.Read(salt)
+		if err != nil {
+			return createRequest, fmt.Errorf("reading bytes for salt %s: %v", name, err)
+		}
+		salts[name] = salt
+	}
+
+	// Derive keys
+	pwSigningKey, _ := e3dbClients.DeriveSigningKey([]byte(password), salts[pwAuthSalt], e3dbClients.AccountDerivationRounds)
+	pkSigningKey, _ := e3dbClients.DeriveSigningKey([]byte(paperKey), salts[pwAuthSalt], e3dbClients.AccountDerivationRounds)
+	// Generate client keys
+	encryptionKeypair, err := e3dbClients.GenerateKeyPair()
+	if err != nil {
+		return createRequest, fmt.Errorf("Failed generating encryption key pair %s", err)
+	}
+	signingKeys, err := e3dbClients.GenerateSigningKeys()
+	if err != nil {
+		return createRequest, fmt.Errorf("Failed generating signing key pair %s", err)
+	}
+	createRequest = accountClient.CreateAccountRequest{
+		Profile: accountClient.Profile{
+			Name:               email,
+			Email:              email,
+			AuthenticationSalt: base64.RawURLEncoding.EncodeToString(salts[pwAuthSalt]),
+			EncodingSalt:       base64.RawURLEncoding.EncodeToString(salts[pwEncSalt]),
+			SigningKey: accountClient.EncryptionKey{
+				Ed25519: base64.RawURLEncoding.EncodeToString(pwSigningKey[:]),
+			},
+			PaperAuthenticationSalt: base64.RawURLEncoding.EncodeToString(salts[pkAuthSalt]),
+			PaperEncodingSalt:       base64.RawURLEncoding.EncodeToString(salts[pkEncSalt]),
+			PaperSigningKey: accountClient.EncryptionKey{
+				Ed25519: base64.RawURLEncoding.EncodeToString(pkSigningKey[:]),
+			},
+		},
+		Account: accountClient.Account{
+			Company: name,
+			Plan:    "free0",
+			PublicKey: accountClient.ClientKey{
+				Curve25519: encryptionKeypair.Public.Material,
+			},
+			SigningKey: accountClient.EncryptionKey{
+				Ed25519: signingKeys.Public.Material,
+			},
+		},
+	}
+
+	return createRequest, nil
 }
 
 // Login derives the needed keys and fetches an active account session

@@ -630,6 +630,45 @@ func cmdRegister(cmd *cli.Cmd) {
 		}
 	}
 }
+func cmdDeriveAccountCredentials(cmd *cli.Cmd) {
+	apiBaseURL := cmd.String(cli.StringOpt{
+		Name:      "api",
+		Desc:      "e3db api base url",
+		Value:     "",
+		HideValue: true,
+	})
+	accountName := cmd.String(cli.StringArg{
+		Name:      "NAME",
+		Desc:      "Account display name",
+		Value:     "",
+		HideValue: true,
+	})
+	accountEmail := cmd.String(cli.StringArg{
+		Name:      "EMAIL",
+		Desc:      "Account email",
+		Value:     "",
+		HideValue: true,
+	})
+
+	accountPassword := cmd.String(cli.StringArg{
+		Name:      "PASSWORD",
+		Desc:      "Account password",
+		Value:     "",
+		HideValue: true,
+	})
+
+	cmd.Spec = "[OPTIONS] [NAME] [EMAIL] [PASSWORD]"
+
+	cmd.Action = func() {
+		sdk := e3db.ToznySDKV3{}
+		ctx := context.Background()
+		accountCredentials, err := sdk.DeriveAccountCredentials(ctx, *accountName, *accountEmail, *accountPassword, *apiBaseURL)
+		if err != nil {
+			dieErr(err)
+		}
+		fmt.Printf("%+v", accountCredentials)
+	}
+}
 
 /**
 SDK V3 prototyping below.
@@ -951,5 +990,6 @@ func main() {
 	app.Command("lsrealms", "list realms", cmdListRealms)
 	app.Command("signup", "signup for a new account", cmdSignup)
 	app.Command("login", "login to fetch credentials and account token", cmdLogin)
+	app.Command("derive-account-credentials", "Ouputs Account Credentials", cmdDeriveAccountCredentials)
 	app.Run(os.Args)
 }
