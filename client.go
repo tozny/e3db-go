@@ -64,6 +64,7 @@ const (
 	SecretNameMetadataKey           = "secretName"
 	SecretVersionMetadataKey        = "version"
 	SecretValueDataKey              = "secretValue"
+	AccountApplicationName          = "account"
 )
 
 const (

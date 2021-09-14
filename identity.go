@@ -145,7 +145,6 @@ func (r *Realm) Register(username, password, registrationToken, email, firstName
 	identity.FirstName = registration.Identity.FirstName
 	identity.LastName = registration.Identity.LastName
 	identity.ToznySDKV3 = storageClient
-
 	_, err = identity.writePasswordNote(password)
 	if err != nil {
 		return identity, err
@@ -160,6 +159,32 @@ func (r *Realm) Register(username, password, registrationToken, email, firstName
 
 func (i *Identity) DeriveCredentails(password string, nameSalt string) (string, e3dbClients.EncryptionKeys, e3dbClients.SigningKeys, error) {
 	return e3dbClients.DeriveIdentityCredentials(i.Username, password, i.Realm.Name, nameSalt)
+}
+
+// ChangePassword Updates the password for an identity
+func (i *Identity) ChangePassword(newPassword string) (*storageClient.Note, error) {
+	return i.updatePasswordNote(newPassword)
+}
+
+func (i *Identity) updatePasswordNote(password string) (*storageClient.Note, error) {
+	// Get Realm Info
+	info, err := i.Realm.Info()
+	if err != nil {
+		return &storageClient.Note{}, err
+	}
+	// Derive Credentials with new password
+	noteName, encryptionKeyPair, signingKeyPair, err := i.DeriveCredentails(password, "")
+	if err != nil {
+		return &storageClient.Note{}, err
+	}
+	// Prepare the Arguments needed
+	eacp := storageClient.TozIDEACP{
+		RealmName: info.Domain,
+	}
+	eacps := &storageClient.EACP{
+		TozIDEACP: &eacp,
+	}
+	return i.replaceNoteByName(noteName, &encryptionKeyPair, &signingKeyPair, eacps)
 }
 
 func (i *Identity) writePasswordNote(password string) (*storageClient.Note, error) {
@@ -298,7 +323,7 @@ func (i *Identity) writeCredentialNote(noteName string, encryptionKeyPair *e3dbC
 	}
 	notePrivateSigningKey := [e3dbClients.SigningKeySize]byte{}
 	copy(notePrivateSigningKey[:], privateSigningKeyBytes)
-	signingSalt := "4fad1a84-9fd2-41f6-ba39-a4655ac1ffa5" //uuid.New().String()
+	signingSalt := uuid.New().String()
 	signedNote, err := i.SignNote(rawCredentialNote, &notePrivateSigningKey, signingSalt)
 	if err != nil {
 		return &storageClient.Note{}, err
@@ -440,4 +465,73 @@ func (i *Identity) Serialize() (serializedIdentity, error) {
 	serialized.Config = string(configBytes)
 	serialized.Storage = string(storageBytes)
 	return serialized, nil
+}
+
+func (i *Identity) createEncryptedNote(noteName string, encryptionKeyPair *e3dbClients.EncryptionKeys, signingKeyPair *e3dbClients.SigningKeys, eacps *storageClient.EACP) (*storageClient.Note, error) {
+	// Create Note
+	serialized, err := i.Serialize()
+	rawNoteBody := NoteBody{
+		"config":  serialized.Config,
+		"storage": serialized.Storage,
+	}
+
+	rawCredentialNote := storageClient.Note{
+		IDString:            noteName,
+		ClientID:            i.ClientID,
+		Mode:                e3dbClients.DefaultCryptographicMode,
+		RecipientSigningKey: signingKeyPair.Public.Material,
+		WriterSigningKey:    i.StorageClient.SigningKeys.Public.Material,
+		WriterEncryptionKey: i.StorageClient.EncryptionKeys.Public.Material,
+		Data:                rawNoteBody,
+		MaxViews:            -1,
+		Expires:             false,
+		EACPS:               eacps,
+	}
+	// Sign over all the note data and the signature material itself
+	privateSigningKeyBytes, err := e3dbClients.Base64Decode(i.StorageClient.SigningKeys.Private.Material)
+	if err != nil {
+		return &storageClient.Note{}, err
+	}
+	// Sign the note with Private signing key
+	notePrivateSigningKey := [e3dbClients.SigningKeySize]byte{}
+	copy(notePrivateSigningKey[:], privateSigningKeyBytes)
+	signingSalt := uuid.New().String()
+	signedNote, err := i.SignNote(rawCredentialNote, &notePrivateSigningKey, signingSalt)
+	if err != nil {
+		return &storageClient.Note{}, err
+	}
+	accessKey := e3dbClients.RandomSymmetricKey()
+	// Create Encrypted Access Key
+	encryptedAccessKey, err := e3dbClients.EncryptAccessKey(accessKey, e3dbClients.EncryptionKeys{
+		Private: e3dbClients.Key{
+			Type:     e3dbClients.DefaultEncryptionKeyType,
+			Material: i.StorageClient.EncryptionKeys.Private.Material,
+		},
+		Public: e3dbClients.Key{
+			Type:     e3dbClients.DefaultEncryptionKeyType,
+			Material: encryptionKeyPair.Public.Material,
+		},
+	})
+	if err != nil {
+		return &storageClient.Note{}, err
+	}
+	// Encrypt the signed note and add the encrypted version of the access
+	// key to the note for the reader to be able to decrypt the note
+	encryptedNoteBody := e3dbClients.EncryptData(signedNote.Data, accessKey)
+	signedNote.Data = *encryptedNoteBody
+	signedNote.EncryptedAccessKey = encryptedAccessKey
+	return &signedNote, nil
+}
+func (i *Identity) replaceNoteByName(noteName string, encryptionKeyPair *e3dbClients.EncryptionKeys, signingKeyPair *e3dbClients.SigningKeys, eacps *storageClient.EACP) (*storageClient.Note, error) {
+	// Create Encrypted Note, Using the encryption and signing keypair derived from the new password
+	signedNote, err := i.createEncryptedNote(noteName, encryptionKeyPair, signingKeyPair, eacps)
+	if err != nil {
+		return &storageClient.Note{}, err
+	}
+	// Update Note
+	credentialNote, err := i.UpsertNoteByIDString(context.Background(), *signedNote)
+	if err != nil {
+		return &storageClient.Note{}, err
+	}
+	return credentialNote, nil
 }
