@@ -203,10 +203,13 @@ type ToznySDKJSONConfig struct {
 	// Embed all config for v1 and v2 clients
 	ConfigFile
 	TozIDSessionIdentityData `json:"toz_id_session_identity_data"`
-	PublicSigningKey  string `json:"public_signing_key"`
-	PrivateSigningKey string `json:"private_signing_key"`
-	AccountUsername   string `json:"account_user_name"`
-	AccountPassword   string `json:"account_password"`
+	PublicSigningKey         string `json:"public_signing_key"`
+	PrivateSigningKey        string `json:"private_signing_key"`
+	AccountUsername          string `json:"account_user_name"`
+	AccountPassword          string `json:"account_password"`
+	// TozIDRealmIDPAccessToken is populated during the login process.
+	// The token can expire so is purposefully not preserved in the saved JSON, and so can be empty.
+	TozIDRealmIDPAccessToken *string
 }
 
 // LoadConfigFile loads JSON configuration for a Tozny SDK from the file

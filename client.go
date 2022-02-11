@@ -692,8 +692,11 @@ type ToznySDKV3 struct {
 	// Tozny server defined globally unique id for this Client.
 	ClientID        string
 	CurrentIdentity TozIDSessionIdentityData
-	config          e3dbClients.ClientConfig
-	akCache         map[akCacheKey]e3dbClients.SymmetricKey
+	// TozIDRealmIDPAccessToken is the tozid-realm-idp jwt given by final redirect of login flow.
+	// because it expires, it is not saved to the config file, and so can be empty.
+	TozIDRealmIDPAccessToken *string
+	config                   e3dbClients.ClientConfig
+	akCache                  map[akCacheKey]e3dbClients.SymmetricKey
 }
 
 // LoggedInIdentityData represents data about the identity session of a given user. Currently that is just realm and
@@ -710,6 +713,9 @@ type ToznySDKConfig struct {
 	AccountUsername          string `json:"account_username"`
 	AccountPassword          string `json:"account_password"`
 	APIEndpoint              string `json:"api_url"`
+	// TozIDRealmIDPAccessToken is populated during the login process.
+	// The token can expire so is purposefully not preserved in the saved JSON, and so can be empty.
+	TozIDRealmIDPAccessToken *string
 }
 
 // NewToznySDK returns a new instance of the ToznySDK initialized with the provided
@@ -722,17 +728,18 @@ func NewToznySDKV3(config ToznySDKConfig) (*ToznySDKV3, error) {
 	pdsClient := pdsClient.New(config.ClientConfig)
 
 	return &ToznySDKV3{
-		E3dbAccountClient:   &accountServiceClient,
-		E3dbAccountClientV2: &accountServiceV2Client,
-		E3dbIdentityClient:  &identityClient,
-		StorageClient:       &storageClient,
-		E3dbPDSClient:       &pdsClient,
-		AccountUsername:     config.AccountUsername,
-		AccountPassword:     config.AccountPassword,
-		APIEndpoint:         config.APIEndpoint,
-		ClientID:            config.ClientID,
-		CurrentIdentity:     config.TozIDSessionIdentityData,
-		config:              config.ClientConfig,
+		E3dbAccountClient:        &accountServiceClient,
+		E3dbAccountClientV2:      &accountServiceV2Client,
+		E3dbIdentityClient:       &identityClient,
+		StorageClient:            &storageClient,
+		E3dbPDSClient:            &pdsClient,
+		AccountUsername:          config.AccountUsername,
+		AccountPassword:          config.AccountPassword,
+		APIEndpoint:              config.APIEndpoint,
+		ClientID:                 config.ClientID,
+		CurrentIdentity:          config.TozIDSessionIdentityData,
+		TozIDRealmIDPAccessToken: config.TozIDRealmIDPAccessToken,
+		config:                   config.ClientConfig,
 	}, nil
 }
 
@@ -775,9 +782,10 @@ func sdkV3FromConfig(config ToznySDKJSONConfig) (*ToznySDKV3, error) {
 				},
 			},
 		},
-		AccountUsername: config.AccountUsername,
-		AccountPassword: config.AccountPassword,
-		APIEndpoint:     config.APIBaseURL,
+		AccountUsername:          config.AccountUsername,
+		AccountPassword:          config.AccountPassword,
+		APIEndpoint:              config.APIBaseURL,
+		TozIDRealmIDPAccessToken: config.TozIDRealmIDPAccessToken,
 		TozIDSessionIdentityData: TozIDSessionIdentityData{
 			Username: config.Username,
 			Realm:    config.Realm,
@@ -920,6 +928,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	if err != nil {
 		return nil, err
 	}
+	config.TozIDRealmIDPAccessToken = &redirect.AccessToken
 	config.Realm = realmInfo.Name
 	config.Username = username
 	return sdkV3FromConfig(config)
