@@ -904,11 +904,11 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	redirectRequest := identityClient.IdentityLoginRedirectRequest{
 		RealmName: realmInfo.Domain,
 		// The following map values if not present will be set to the empty string and identity service will handle appropriately
-		SessionCode:   sessionResponse.Context["session_code"],
-		Execution:     sessionResponse.Context["execution"],
-		TabID:         sessionResponse.Context["tab_id"],
-		ClientID:      sessionResponse.Context["client_id"],
-		AuthSessionId: sessionResponse.Context["auth_session_id"],
+		SessionCode:   sessionResponse.Context["session_code"].(string),
+		Execution:     sessionResponse.Context["execution"].(string),
+		TabID:         sessionResponse.Context["tab_id"].(string),
+		ClientID:      sessionResponse.Context["client_id"].(string),
+		AuthSessionId: sessionResponse.Context["auth_session_id"].(string),
 	}
 	redirect, err := idClient.IdentityLoginRedirect(ctx, redirectRequest)
 	if err != nil {
