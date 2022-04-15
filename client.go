@@ -2490,6 +2490,16 @@ func (c *ToznySDKV3) ExecuteSearch(executorRequest *searchExecutorClient.Executo
 		return nil, err
 	}
 	for index, record := range *results {
+		// TODO: fix root of below problem or support partial success
+		// If a record is indexed that the user does not actually have access to, the record won't have
+		// an access key which causes the call to `getAKForListedRecord` to panic. Any error in this loop
+		// results in a total failure of search. I needed this partial success implemented quick & dirty
+		// so I just skip attempting to decrypt. It should be handled more properly by allowing this func
+		// to support partial success.
+		if record.AccessKey == nil {
+			fmt.Printf("failure: NO ACCESS KEY! skipping record id: %+s\n", record.Metadata.RecordID)
+			continue
+		}
 		accessKey, err := c.getAKForListedRecord(rawEncryptionKey, record)
 		if err != nil {
 			return nil, err
