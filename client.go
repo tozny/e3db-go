@@ -11,9 +11,12 @@ Package e3db provides programmatic access to the e3db API/Innovault service for 
 Official documentation for e3db can be found at https://tozny.com/documentation/e3db/
 
 If not using go mod command for your project:
-	  import "github.com/tozny/e3db-go"
+
+	import "github.com/tozny/e3db-go"
+
 Otherwise
-	  import "github.com/tozny/e3db-go/v2"
+
+	import "github.com/tozny/e3db-go/v2"
 */
 package e3db
 
@@ -810,7 +813,7 @@ type TozIDLoginRequest struct {
 	LoginHandler func(response *IdentitySessionIntermediateResponse) (LoginActionData, error)
 }
 
-//GetSDKV3ForTozIDUser logs in a TozID user and returns the storage client of that user as a ToznySDKV3
+// GetSDKV3ForTozIDUser logs in a TozID user and returns the storage client of that user as a ToznySDKV3
 func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	if login.APIBaseURL == "" {
 		login.APIBaseURL = "https://api.e3db.com"
@@ -1761,6 +1764,28 @@ func (c *ToznySDKV3) WriteRecord(ctx context.Context, data map[string]string, re
 		return nil, err
 	}
 	record, err := c.E3dbPDSClient.WriteRecord(ctx, encryptedRecord)
+	if err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+// UpdateRecord encrypts the data for the record and creates a new record in E3DB
+func (c *ToznySDKV3) UpdateRecord(ctx context.Context, data map[string]string, recordType string, plain map[string]string, recordId string) (*pdsClient.Record, error) {
+	recordToWrite := pdsClient.WriteRecordRequest{
+		Data: data,
+		Metadata: pdsClient.Meta{
+			Type:     recordType,
+			WriterID: c.E3dbPDSClient.ClientID,
+			UserID:   c.E3dbPDSClient.ClientID,
+			Plain:    plain,
+		},
+	}
+	encryptedRecord, err := c.E3dbPDSClient.EncryptRecord(ctx, recordToWrite)
+	if err != nil {
+		return nil, err
+	}
+	record, err := c.E3dbPDSClient.UpdateRecord(ctx, encryptedRecord, recordId)
 	if err != nil {
 		return nil, err
 	}
