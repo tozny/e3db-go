@@ -857,6 +857,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 		return nil, err
 	}
 	// TODO: rework this to support brokered logins. See JS SDK for examples
+	federated := false
 	for {
 		if sessionResponse.LoginActionType == "fetch" {
 			break
@@ -868,6 +869,19 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 			if err != nil {
 				return nil, err
 			}
+			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
+			if err != nil {
+				return nil, err
+			}
+		case "password-challenge":
+			federated = true
+			data := url.Values{}
+			data.Add("password", login.Password)
+			request, err := http.NewRequest("POST", sessionResponse.ActionURL, strings.NewReader(data.Encode()))
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
 			if err != nil {
 				return nil, err
@@ -922,6 +936,34 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 		return nil, err
 	}
 	storage := storageClient.New(clientConfig)
+	if federated {
+		noteNameRealm, _ := e3dbClients.HashString("federated:" + login.Username + "@realm:" + login.RealmName)
+		brokerLoginRequest := identityClient.BrokerLoginRequest{
+			Action:     "login",
+			NoteName:   noteNameRealm,
+			PublicKey:  encryptionKeys.Public.Material,
+			SigningKey: signingKeys.Public.Material,
+			AuthHeaders: identityClient.AuthHeaders{
+				TozIDToken: redirect.AccessToken,
+			},
+		}
+		brokerResp, err := idClient.BrokerIdentityLogin(ctx, brokerLoginRequest, login.RealmName)
+		if err != nil {
+			return nil, err
+		}
+		note, err := storage.ReadNote(ctx, brokerResp.RecoveryNoteID.String(), map[string]string{storageClient.TozIDLoginTokenHeader: redirect.AccessToken})
+		if err != nil {
+			return nil, err
+		}
+		err = storage.DecryptNote(note)
+		if err != nil {
+			return nil, err
+		}
+		noteName, encryptionKeys, signingKeys, err = e3dbClients.DeriveIdentityCredentials(note.Data["username"], note.Data["broker_key"], realmInfo.Name, "")
+		clientConfig.EncryptionKeys = encryptionKeys
+		clientConfig.SigningKeys = signingKeys
+		storage = storageClient.New(clientConfig)
+	}
 	note, err := storage.ReadNoteByName(ctx, noteName, map[string]string{storageClient.TozIDLoginTokenHeader: redirect.AccessToken})
 	if err != nil {
 		return nil, err
