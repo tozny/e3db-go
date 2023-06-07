@@ -858,6 +858,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	}
 	// TODO: rework this to support brokered logins. See JS SDK for examples
 	federated := false
+	var brokerStorageClient storageClient.StorageClient
 	for {
 		if sessionResponse.LoginActionType == "fetch" {
 			break
@@ -882,6 +883,92 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 				return nil, err
 			}
 			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
+			if err != nil {
+				return nil, err
+			}
+		case "register-brokered-user":
+			data := url.Values{}
+			brokerStorageClient = storageClient.New(clientConfig)
+			data["public_key"] = []string{brokerStorageClient.EncryptionKeys.Public.Material}
+			data["public_signing_key"] = []string{brokerStorageClient.SigningKeys.Public.Material}
+			request, err := http.NewRequest("POST", sessionResponse.ActionURL, strings.NewReader(data.Encode()))
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Set("Content-Type", sessionResponse.ContentType)
+			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
+			if err != nil {
+				return nil, err
+			}
+		case "complete-broker-registration":
+			// Get the api_key_id
+			apiKey := ""
+			res := sessionResponse.Context["result"]
+			if res == nil {
+				return nil, fmt.Errorf("Failed result lookup")
+			}
+			identityIface, ok := res.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("Failed identity lookup")
+			}
+			id := identityIface["identity"]
+			if id == nil {
+				return nil, fmt.Errorf("Failed identity lookup")
+			}
+			idMap, ok := id.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("Failed apikey lookup")
+			}
+			api_key_id := idMap["api_key_id"]
+			if api_key_id != nil {
+				apiKey = api_key_id.(string)
+			}
+			if apiKey == "" {
+				return nil, fmt.Errorf("Failed apikey lookup")
+			}
+			apiSecret := idMap["api_secret_key"].(string)
+			clientConfig.APIKey = apiKey
+			clientConfig.APISecret = apiSecret
+			// Setup identity to write broker notes
+			idObj := &Identity{
+				ID:        int64(idMap["id"].(float64)),
+				Username:  idMap["name"].(string),
+				FirstName: idMap["first_name"].(string),
+				LastName:  idMap["last_name"].(string),
+				Realm: &Realm{
+					Name:            login.RealmName,
+					App:             "account",
+					APIEndpoint:     login.APIBaseURL,
+					BrokerTargetURL: login.APIBaseURL + "/" + login.RealmName + "/" + "recover",
+					realmInfo: &identityClient.RealmInfo{
+						Name:   login.RealmName,
+						Domain: login.RealmName,
+					},
+				},
+			}
+			idObj.Realm.realmInfo.BrokerIdentityToznyID.UnmarshalText([]byte(identityIface["realm_broker_identity_tozny_id"].(string)))
+			pdsClient := pdsClient.New(clientConfig)
+			idObj.ToznySDKV3 = &ToznySDKV3{
+				APIEndpoint:   login.APIBaseURL,
+				E3dbPDSClient: &pdsClient,
+				StorageClient: &brokerStorageClient,
+			}
+			idObj.ToznySDKV3.ClientID = idMap["tozny_id"].(string)
+			brokerStorageClient.ClientID = idMap["tozny_id"].(string)
+			brokerStorageClient.APIKey = apiKey
+			brokerStorageClient.APISecret = apiSecret
+			email := idMap["email"].(string)
+			_, err := idObj.writeBrokeredLoginNotes(email)
+			if err != nil {
+				return nil, err
+			}
+			data := url.Values{}
+			request, err := http.NewRequest("POST", sessionResponse.ActionURL, strings.NewReader(data.Encode()))
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Set("Content-Type", sessionResponse.ContentType)
 			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
 			if err != nil {
 				return nil, err
@@ -982,6 +1069,78 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	config.Username = username
 	return sdkV3FromConfig(config)
 
+}
+
+func (i *Identity) writeBrokeredLoginNotes(email string) ([]*storageClient.Note, error) {
+	realmInfo, err := i.Realm.Info()
+	if err != nil {
+		return []*storageClient.Note{}, err
+	}
+	// Skip credential notes if there is no broker
+	if realmInfo.BrokerIdentityToznyID == uuid.Nil {
+		return []*storageClient.Note{}, nil
+	}
+	// Fetch the public broker info
+	brokerInfo, err := i.ClientInfo(context.Background(), realmInfo.BrokerIdentityToznyID.String())
+	if brokerInfo == nil {
+		err = fmt.Errorf("Broker info not found for realm %q", realmInfo.Name)
+	}
+	if err != nil {
+		return []*storageClient.Note{}, err
+	}
+	// If there is no broker, do not try to write broker notes
+	// otherwise, get the broker's info
+	// Email EACP
+	emailEACP := storageClient.EmailEACP{
+		EmailAddress:             email,
+		Template:                 "claim_account",
+		ProviderLink:             i.Realm.BrokerTargetURL,
+		DefaultExpirationMinutes: i.Realm.EmailExpiryMinutes,
+	}
+	// format the name based on if first and last are provided
+	name := ""
+	if i.FirstName != "" {
+		name = i.FirstName
+	}
+	if i.LastName != "" {
+		if name != "" {
+			name = name + " "
+		}
+		name = name + i.LastName
+	}
+	if name != "" {
+		emailEACP.TemplateFields = map[string]string{"name": name}
+	}
+	eacps := &storageClient.EACP{
+		TozIDEACP: &storageClient.TozIDEACP{
+			RealmName: i.Realm.Name,
+			Basic:     true,
+		},
+	}
+	writtenNotes := []*storageClient.Note{}
+	noteKey, keyNote, err := i.writeKeyNote("federated", brokerInfo.PublicKey.Curve25519, brokerInfo.SigningKey.Ed25519, eacps)
+	if err != nil {
+		return []*storageClient.Note{}, err
+	}
+	noteName, cryptoKeyPair, signingKeyPair, err := i.DeriveCredentails(noteKey, "")
+	if err != nil {
+		return []*storageClient.Note{}, err
+	}
+	keyNoteID, err := uuid.Parse(keyNote.NoteID)
+	if err != nil {
+		return []*storageClient.Note{}, err
+	}
+	brokeredEACP := &storageClient.EACP{
+		LastAccessEACP: &storageClient.LastAccessEACP{
+			LastReadNoteID: keyNoteID,
+		},
+	}
+	credentialNote, err := i.writeCredentialNote(noteName, &cryptoKeyPair, &signingKeyPair, brokeredEACP)
+	if err != nil {
+		return []*storageClient.Note{}, err
+	}
+	writtenNotes = append(writtenNotes, keyNote, credentialNote)
+	return writtenNotes, nil
 }
 
 // CreateResponse wraps the value return from the account creation method
