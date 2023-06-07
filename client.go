@@ -856,7 +856,6 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO: rework this to support brokered logins. See JS SDK for examples
 	federated := false
 	var brokerStorageClient storageClient.StorageClient
 	for {
