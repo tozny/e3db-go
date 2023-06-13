@@ -943,8 +943,12 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		}
 		// If we have IdPs Configured, get a List
 		if realmInfo.DoIdPsExist {
+			// Generate PKCE
 			dataBytes, err := e3dbClients.GenerateRandomBytes(32)
 			pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+
+			// Set up Request
+			// TODO: Verify Redirect URL is not needed since this is a cli tool and wouldnt need to redirect to example jenkins
 			request := identityClient.InitiateIdentityProviderLoginRequest{
 				RealmName:     *realmName,
 				AppName:       *appName,
@@ -957,15 +961,17 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 			if err != nil {
 				dieErr(err)
 			}
+			// Grab Cookies required for the rest of the login flow
 			cookiesMap := idPInfo.Cookie
 
+			// Grab Providers available for realm
 			providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
-			found := false
-
+			providerRequestedFound := false
 			var allCookies string
 			for _, provider := range providers {
 				if strings.ToLower(*idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
 					// Need to set these cookies in the browser
+					// Making sure to set them for use of frame realmInfo.IdentityServiceProviderBaseURL
 					for key, value := range cookiesMap {
 						allCookies += fmt.Sprintf("%s=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;", key)
 						allCookies += fmt.Sprintf("%s=%s;Path=/;", key, value)
@@ -975,11 +981,11 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 					// URL to redirect to
 					url := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
 					fmt.Printf(" URL  %+v\n", url)
-					found = true
+					providerRequestedFound = true
 				}
 
 			}
-			if !found {
+			if !providerRequestedFound {
 				fmt.Printf("Provider %+v Not Found for Realm %+v \n", idP, realmName)
 			}
 		} else {
