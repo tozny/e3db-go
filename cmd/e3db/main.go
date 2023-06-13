@@ -24,6 +24,8 @@ import (
 	"strings"
 
 	cli "github.com/jawher/mow.cli"
+	e3dbClients "github.com/tozny/e3db-clients-go"
+	"github.com/tozny/e3db-clients-go/identityClient"
 	"github.com/tozny/e3db-go/v2"
 	"golang.org/x/crypto/nacl/box"
 )
@@ -776,7 +778,106 @@ func cmdSignup(cmd *cli.Cmd) {
 	}
 }
 
+func cmdListIdPs(cmd *cli.Cmd) {
+	// apiBaseURL := cmd.String(cli.StringOpt{
+	// 	Name:      "api",
+	// 	Desc:      "e3db api base url",
+	// 	Value:     "",
+	// 	HideValue: true,
+	// })
+	realmName := cmd.String(cli.StringArg{
+		Name:      "REALM_NAME",
+		Desc:      "Realm name to fetch",
+		Value:     "",
+		HideValue: false,
+	})
+	appName := cmd.String(cli.StringArg{
+		Name:      "APP_NAME",
+		Desc:      "App to fetch",
+		Value:     "account",
+		HideValue: false,
+	})
+
+	cmd.Spec = "[REALM_NAME] [APP_NAME]"
+
+	cmd.Action = func() {
+		sdk := e3db.ToznySDKV3{}
+		ctx := context.Background()
+		fmt.Printf("hello %+v \n", *realmName)
+
+		realmInfo, err := sdk.RealmInfo(ctx, *realmName)
+		if err != nil {
+			dieErr(err)
+		}
+
+		// If we have IdPs Configured
+		if realmInfo.DoIdPsExist {
+
+			dataBytes, err := e3dbClients.GenerateRandomBytes(32)
+			pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+			request := identityClient.InitiateIdentityProviderLoginRequest{
+				RealmName:     *realmName,
+				AppName:       *appName,
+				CodeChallenge: pkceVerifier,
+				LoginStyle:    "api",
+				RedirectURL:   "",
+				Scope:         "",
+			}
+			idPInfo, err := sdk.InitiateIdentityProviderLogin(ctx, request)
+			if err != nil {
+				dieErr(err)
+			}
+
+			fmt.Printf("%+v \n", idPInfo)
+		}
+	}
+}
+
 func cmdLogin(cmd *cli.Cmd) {
+	accountUsername := cmd.String(cli.StringArg{
+		Name:      "ACCOUNT_EMAIL",
+		Desc:      "Account username",
+		Value:     "",
+		HideValue: true,
+	})
+	accountPassword := cmd.String(cli.StringArg{
+		Name:      "ACCOUNT_PASSWORD",
+		Desc:      "Account password",
+		Value:     "",
+		HideValue: true,
+	})
+
+	loginEndpoint := cmd.String(cli.StringArg{
+		Name:      "ENDPOINT",
+		Desc:      "Endpoint to use for attempting the login password",
+		Value:     "",
+		HideValue: true,
+	})
+
+	loginType := cmd.String(cli.StringArg{
+		Name:      "LOGIN_TYPE",
+		Desc:      "Login type. Valid values are `password` or `paper`",
+		Value:     "password",
+		HideValue: false,
+	})
+
+	cmd.Spec = "[OPTIONS] [ACCOUNT_EMAIL] [ACCOUNT_PASSWORD] [ENDPOINT] [LOGIN_TYPE]"
+
+	cmd.Action = func() {
+		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
+		if err != nil {
+			dieErr(err)
+		}
+		ctx := context.Background()
+		accountSession, err := sdk.Login(ctx, *accountUsername, *accountPassword, *loginType, *loginEndpoint)
+		if err != nil {
+			dieErr(err)
+		}
+		fmt.Printf("Account Session Token: %+v\n", accountSession.Token)
+	}
+}
+
+func cmdLoginIdP(cmd *cli.Cmd) {
 	accountUsername := cmd.String(cli.StringArg{
 		Name:      "ACCOUNT_EMAIL",
 		Desc:      "Account username",
@@ -988,8 +1089,10 @@ func main() {
 		cmd.Command("write", "write a small file", cmdWriteFile)
 	})
 	app.Command("lsrealms", "list realms", cmdListRealms)
+	app.Command("lsIdP", "list available IdPs", cmdListIdPs)
 	app.Command("signup", "signup for a new account", cmdSignup)
 	app.Command("login", "login to fetch credentials and account token", cmdLogin)
+	app.Command("idp-login", "login to Tozny using an IdP", cmdLoginIdP)
 	app.Command("derive-account-credentials", "Ouputs Account Credentials", cmdDeriveAccountCredentials)
 	app.Run(os.Args)
 }
