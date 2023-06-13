@@ -779,12 +779,12 @@ func cmdSignup(cmd *cli.Cmd) {
 }
 
 func cmdListIdPs(cmd *cli.Cmd) {
-	// apiBaseURL := cmd.String(cli.StringOpt{
-	// 	Name:      "api",
-	// 	Desc:      "e3db api base url",
-	// 	Value:     "",
-	// 	HideValue: true,
-	// })
+	apiBaseURL := cmd.String(cli.StringOpt{
+		Name:      "API",
+		Desc:      "e3db api base url",
+		Value:     "https://api.e3db.com",
+		HideValue: true,
+	})
 	realmName := cmd.String(cli.StringArg{
 		Name:      "REALM_NAME",
 		Desc:      "Realm name to fetch",
@@ -798,27 +798,33 @@ func cmdListIdPs(cmd *cli.Cmd) {
 		HideValue: false,
 	})
 
-	cmd.Spec = "[REALM_NAME] [APP_NAME]"
+	scopes := cmd.String(cli.StringArg{
+		Name:      "SCOPES",
+		Desc:      "Scopes used for the Identity Login",
+		Value:     "openid",
+		HideValue: false,
+	})
+
+	cmd.Spec = "[REALM_NAME] [APP_NAME] [SCOPES]"
 
 	cmd.Action = func() {
+		clientConfig := e3dbClients.ClientConfig{
+			Host:      *apiBaseURL,
+			AuthNHost: *apiBaseURL,
+		}
+		identityClientConfig := identityClient.New(clientConfig)
 		sdk := e3db.ToznySDKV3{
-			APIEndpoint: "https://api.e3db.com",
-			E3dbIdentityClient: &identityClient.E3dbIdentityClient{
-				Host: "https://api.e3db.com",
-			},
+			APIEndpoint:        *apiBaseURL,
+			E3dbIdentityClient: &identityClientConfig,
 		}
 		ctx := context.Background()
-		fmt.Printf("hello %+v %+v\n", *realmName, sdk)
 
 		realmInfo, err := sdk.RealmInfo(ctx, *realmName)
 		if err != nil {
 			dieErr(err)
 		}
-		fmt.Printf("after %+v \n", *realmName)
-
-		// If we have IdPs Configured
+		// If we have IdPs Configured, get a List
 		if realmInfo.DoIdPsExist {
-
 			dataBytes, err := e3dbClients.GenerateRandomBytes(32)
 			pkceVerifier := e3dbClients.Base64Encode(dataBytes)
 			request := identityClient.InitiateIdentityProviderLoginRequest{
@@ -827,14 +833,16 @@ func cmdListIdPs(cmd *cli.Cmd) {
 				CodeChallenge: pkceVerifier,
 				LoginStyle:    "api",
 				RedirectURL:   "",
-				Scope:         "",
+				Scope:         *scopes,
 			}
 			idPInfo, err := sdk.InitiateIdentityProviderLogin(ctx, request)
 			if err != nil {
 				dieErr(err)
 			}
-
-			fmt.Printf("%+v \n", idPInfo)
+			providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
+			for _, provider := range providers {
+				fmt.Printf("%+v \n", provider.(map[string]interface{})["displayName"])
+			}
 		}
 	}
 }
@@ -884,46 +892,104 @@ func cmdLogin(cmd *cli.Cmd) {
 }
 
 func cmdLoginIdP(cmd *cli.Cmd) {
-	accountUsername := cmd.String(cli.StringArg{
-		Name:      "ACCOUNT_EMAIL",
-		Desc:      "Account username",
+	realmName := cmd.String(cli.StringArg{
+		Name:      "REALM_NAME",
+		Desc:      "Realm name to fetch",
 		Value:     "",
-		HideValue: true,
+		HideValue: false,
 	})
-	accountPassword := cmd.String(cli.StringArg{
-		Name:      "ACCOUNT_PASSWORD",
-		Desc:      "Account password",
-		Value:     "",
-		HideValue: true,
+	appName := cmd.String(cli.StringArg{
+		Name:      "APP_NAME",
+		Desc:      "App to fetch",
+		Value:     "account",
+		HideValue: false,
 	})
-
-	loginEndpoint := cmd.String(cli.StringArg{
-		Name:      "ENDPOINT",
-		Desc:      "Endpoint to use for attempting the login password",
-		Value:     "",
-		HideValue: true,
-	})
-
-	loginType := cmd.String(cli.StringArg{
-		Name:      "LOGIN_TYPE",
-		Desc:      "Login type. Valid values are `password` or `paper`",
-		Value:     "password",
+	scopes := cmd.String(cli.StringArg{
+		Name:      "SCOPES",
+		Desc:      "Scopes used for the Identity Login",
+		Value:     "openid",
 		HideValue: false,
 	})
 
-	cmd.Spec = "[OPTIONS] [ACCOUNT_EMAIL] [ACCOUNT_PASSWORD] [ENDPOINT] [LOGIN_TYPE]"
+	idP := cmd.String(cli.StringArg{
+		Name:      "IDENTITY_PROVIDER",
+		Desc:      "The identity provider being used for the identity Login",
+		Value:     "openid",
+		HideValue: false,
+	})
+	apiBaseURL := cmd.String(cli.StringOpt{
+		Name:      "API",
+		Desc:      "e3db api base url",
+		Value:     "https://api.e3db.com",
+		HideValue: true,
+	})
 
+	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [SCOPES]"
 	cmd.Action = func() {
-		sdk, err := e3db.GetSDKV3(fmt.Sprintf(e3db.ProfileInterpolationConfigFilePath, *options.Profile))
-		if err != nil {
-			dieErr(err)
+		clientConfig := e3dbClients.ClientConfig{
+			Host:      *apiBaseURL,
+			AuthNHost: *apiBaseURL,
+		}
+		identityClientConfig := identityClient.New(clientConfig)
+		sdk := e3db.ToznySDKV3{
+			APIEndpoint:        *apiBaseURL,
+			E3dbIdentityClient: &identityClientConfig,
 		}
 		ctx := context.Background()
-		accountSession, err := sdk.Login(ctx, *accountUsername, *accountPassword, *loginType, *loginEndpoint)
+
+		realmInfo, err := sdk.RealmInfo(ctx, *realmName)
 		if err != nil {
 			dieErr(err)
 		}
-		fmt.Printf("Account Session Token: %+v\n", accountSession.Token)
+		// If we have IdPs Configured, get a List
+		if realmInfo.DoIdPsExist {
+			dataBytes, err := e3dbClients.GenerateRandomBytes(32)
+			pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+			request := identityClient.InitiateIdentityProviderLoginRequest{
+				RealmName:     *realmName,
+				AppName:       *appName,
+				CodeChallenge: pkceVerifier,
+				LoginStyle:    "api",
+				RedirectURL:   "",
+				Scope:         *scopes,
+			}
+			idPInfo, err := sdk.InitiateIdentityProviderLogin(ctx, request)
+			if err != nil {
+				dieErr(err)
+			}
+			cookiesMap := idPInfo.Cookie
+
+			providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
+			found := false
+
+			var allCookies string
+			for _, provider := range providers {
+				if strings.ToLower(*idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
+					// Need to set these cookies in the browser
+					// JS CODE:
+					//  for (const cookie in state.externalIDPLoginCookies) {
+					// document.cookie = `${cookie}=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;`
+					// document.cookie = `${cookie}=${state.externalIDPLoginCookies[cookie]};Path=/;`
+					//}
+					for key, value := range cookiesMap {
+						allCookies += fmt.Sprintf("%s=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;", key)
+						allCookies += fmt.Sprintf("%s=%s;Path=/;", key, value)
+					}
+					// Cookies to set on browser
+					fmt.Printf(" Cookies  %+v\n", allCookies)
+					// URL to redirect to
+					url := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
+					fmt.Printf(" URL  %+v\n", url)
+					found = true
+				}
+
+			}
+			if !found {
+				fmt.Printf("Provider %+v Not Found for Realm %+v \n", idP, realmName)
+			}
+		} else {
+			fmt.Printf("No Providers Found for Realm %+v \n", realmName)
+		}
 	}
 }
 
