@@ -966,11 +966,6 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 			for _, provider := range providers {
 				if strings.ToLower(*idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
 					// Need to set these cookies in the browser
-					// JS CODE:
-					//  for (const cookie in state.externalIDPLoginCookies) {
-					// document.cookie = `${cookie}=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;`
-					// document.cookie = `${cookie}=${state.externalIDPLoginCookies[cookie]};Path=/;`
-					//}
 					for key, value := range cookiesMap {
 						allCookies += fmt.Sprintf("%s=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;", key)
 						allCookies += fmt.Sprintf("%s=%s;Path=/;", key, value)

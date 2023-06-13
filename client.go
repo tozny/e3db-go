@@ -695,9 +695,9 @@ type ToznySDKV3 struct {
 	// Network location of the Tozny services to communicate with.
 	APIEndpoint string
 	// Tozny server defined globally unique id for this Client.
-	ClientID        string
-	AccountToken    string
-	CurrentIdentity TozIDSessionIdentityData
+	ClientID            string
+	IdentityAccessToken string // TODO-- Katie make sure to set this
+	CurrentIdentity     TozIDSessionIdentityData
 	// TozIDRealmIDPAccessToken is the tozid-realm-idp jwt given by final redirect of login flow.
 	// because it expires, it is not saved to the config file, and so can be empty.
 	TozIDRealmIDPAccessToken *string
@@ -1069,7 +1069,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	config.Username = username
 	sdk, err := sdkV3FromConfig(config)
 	if err == nil {
-		sdk.AccountToken = redirect.AccessToken
+		sdk.IdentityAccessToken = redirect.AccessToken
 	}
 	return sdk, err
 
