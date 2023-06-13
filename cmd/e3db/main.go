@@ -801,14 +801,20 @@ func cmdListIdPs(cmd *cli.Cmd) {
 	cmd.Spec = "[REALM_NAME] [APP_NAME]"
 
 	cmd.Action = func() {
-		sdk := e3db.ToznySDKV3{}
+		sdk := e3db.ToznySDKV3{
+			APIEndpoint: "https://api.e3db.com",
+			E3dbIdentityClient: &identityClient.E3dbIdentityClient{
+				Host: "https://api.e3db.com",
+			},
+		}
 		ctx := context.Background()
-		fmt.Printf("hello %+v \n", *realmName)
+		fmt.Printf("hello %+v %+v\n", *realmName, sdk)
 
 		realmInfo, err := sdk.RealmInfo(ctx, *realmName)
 		if err != nil {
 			dieErr(err)
 		}
+		fmt.Printf("after %+v \n", *realmName)
 
 		// If we have IdPs Configured
 		if realmInfo.DoIdPsExist {
