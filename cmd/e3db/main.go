@@ -914,7 +914,7 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 	idP := cmd.String(cli.StringArg{
 		Name:      "IDENTITY_PROVIDER",
 		Desc:      "The identity provider being used for the identity Login",
-		Value:     "openid",
+		Value:     "",
 		HideValue: false,
 	})
 	apiBaseURL := cmd.String(cli.StringOpt{
