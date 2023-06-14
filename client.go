@@ -41,6 +41,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/browser"
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/file"
@@ -1660,6 +1661,8 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
 				returnObj.URL = pathURL
 				fmt.Printf(" URL  %+v\n", pathURL)
+
+				browser.OpenURL(pathURL)
 				providerRequestedFound = true
 			}
 
