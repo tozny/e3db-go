@@ -161,6 +161,11 @@ type Record struct {
 	Data map[string]string `json:"data"`
 }
 
+type idPLogin struct {
+	Cookies string
+	URL     string
+}
+
 // GetDefaultClient loads the default E3DB configuration profile and
 // creates a client using those options.
 func GetDefaultClient() (*Client, error) {
@@ -1556,6 +1561,116 @@ func (c *ToznySDKV3) Login(ctx context.Context, email string, password string, s
 	account.Token = accountToken
 	account.Config = clientConfig
 	return account, nil
+}
+
+func (c *ToznySDKV3) GetRealmInfo(ctx context.Context, realmName string, apiBaseURL string) (*identityClient.RealmInfo, error) {
+	clientConfig := e3dbClients.ClientConfig{
+		Host:      apiBaseURL,
+		AuthNHost: apiBaseURL,
+	}
+	identityClientConfig := identityClient.New(clientConfig)
+	c.APIEndpoint = apiBaseURL
+	c.E3dbIdentityClient = &identityClientConfig
+	realmInfo, err := c.RealmInfo(ctx, realmName)
+	if err != nil {
+		return nil, err
+	}
+	return realmInfo, nil
+}
+
+func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string) (string, error) {
+	idPsAvailable := ""
+	// Get Realm Info
+	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
+	if err != nil {
+		return idPsAvailable, err
+	}
+	// If we have IdPs Configured, get a List
+	if realmInfo.DoIdPsExist {
+		dataBytes, err := e3dbClients.GenerateRandomBytes(32)
+		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+		request := identityClient.InitiateIdentityProviderLoginRequest{
+			RealmName:     realmName,
+			AppName:       appName,
+			CodeChallenge: pkceVerifier,
+			LoginStyle:    "api",
+			RedirectURL:   "",
+			Scope:         scopes,
+		}
+		idPInfo, err := c.InitiateIdentityProviderLogin(ctx, request)
+		if err != nil {
+			return idPsAvailable, err
+		}
+		providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
+		for _, provider := range providers {
+			idPsAvailable += fmt.Sprintf("%+v \n", provider.(map[string]interface{})["displayName"])
+		}
+	}
+
+	return idPsAvailable, nil
+
+}
+
+func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string) (idPLogin, error) {
+	returnObj := idPLogin{}
+	// Get Realm Info
+	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
+	if err != nil {
+		return returnObj, err
+	}
+	// If we have IdPs Configured, get a List
+	if realmInfo.DoIdPsExist {
+		// Generate PKCE
+		dataBytes, err := e3dbClients.GenerateRandomBytes(32)
+		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+
+		// Set up Request
+		// TODO: Verify Redirect URL is not needed since this is a cli tool and wouldnt need to redirect to example jenkins
+		request := identityClient.InitiateIdentityProviderLoginRequest{
+			RealmName:     realmName,
+			AppName:       appName,
+			CodeChallenge: pkceVerifier,
+			LoginStyle:    "api",
+			RedirectURL:   "",
+			Scope:         scopes,
+		}
+		idPInfo, err := c.InitiateIdentityProviderLogin(ctx, request)
+		if err != nil {
+			return returnObj, err
+		}
+		// Grab Cookies required for the rest of the login flow
+		cookiesMap := idPInfo.Cookie
+
+		// Grab Providers available for realm
+		providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
+		providerRequestedFound := false
+		var allCookies string
+		for _, provider := range providers {
+			if strings.ToLower(idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
+				// Need to set these cookies in the browser
+				// Making sure to set them for use of frame realmInfo.IdentityServiceProviderBaseURL
+				for key, value := range cookiesMap {
+					allCookies += fmt.Sprintf("%s=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;", key)
+					allCookies += fmt.Sprintf("%s=%s;Path=/;", key, value)
+				}
+				returnObj.Cookies = allCookies
+				// Cookies to set on browser
+				fmt.Printf(" Cookies  %+v\n", allCookies)
+				// URL to redirect to
+				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
+				returnObj.URL = pathURL
+				fmt.Printf(" URL  %+v\n", pathURL)
+				providerRequestedFound = true
+			}
+
+		}
+		if !providerRequestedFound {
+			fmt.Printf("Provider %+v Not Found for Realm %+v \n", idP, realmName)
+		}
+	} else {
+		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
+	}
+	return returnObj, nil
 }
 
 // ConvertBrokerIdentityToClientConfig converts a broker identity to raw Tozny client credentials.

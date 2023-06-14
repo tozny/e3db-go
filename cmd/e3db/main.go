@@ -24,8 +24,6 @@ import (
 	"strings"
 
 	cli "github.com/jawher/mow.cli"
-	e3dbClients "github.com/tozny/e3db-clients-go"
-	"github.com/tozny/e3db-clients-go/identityClient"
 	"github.com/tozny/e3db-go/v2"
 	"golang.org/x/crypto/nacl/box"
 )
@@ -808,41 +806,17 @@ func cmdListIdPs(cmd *cli.Cmd) {
 	cmd.Spec = "[REALM_NAME] [APP_NAME] [SCOPES]"
 
 	cmd.Action = func() {
-		clientConfig := e3dbClients.ClientConfig{
-			Host:      *apiBaseURL,
-			AuthNHost: *apiBaseURL,
-		}
-		identityClientConfig := identityClient.New(clientConfig)
-		sdk := e3db.ToznySDKV3{
-			APIEndpoint:        *apiBaseURL,
-			E3dbIdentityClient: &identityClientConfig,
-		}
+		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
-
-		realmInfo, err := sdk.RealmInfo(ctx, *realmName)
+		// If we have IdPs Configured, get a List
+		availableIdPs, err := sdk.ListAvailableIdPs(ctx, *realmName, *apiBaseURL, *appName, *scopes)
 		if err != nil {
 			dieErr(err)
 		}
-		// If we have IdPs Configured, get a List
-		if realmInfo.DoIdPsExist {
-			dataBytes, err := e3dbClients.GenerateRandomBytes(32)
-			pkceVerifier := e3dbClients.Base64Encode(dataBytes)
-			request := identityClient.InitiateIdentityProviderLoginRequest{
-				RealmName:     *realmName,
-				AppName:       *appName,
-				CodeChallenge: pkceVerifier,
-				LoginStyle:    "api",
-				RedirectURL:   "",
-				Scope:         *scopes,
-			}
-			idPInfo, err := sdk.InitiateIdentityProviderLogin(ctx, request)
-			if err != nil {
-				dieErr(err)
-			}
-			providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
-			for _, provider := range providers {
-				fmt.Printf("%+v \n", provider.(map[string]interface{})["displayName"])
-			}
+		if availableIdPs == "" {
+			fmt.Print("No Available Identity Providers Found")
+		} else {
+			fmt.Printf("Available Identity Providers: \n%+v", availableIdPs)
 		}
 	}
 }
@@ -926,70 +900,12 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 
 	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [SCOPES]"
 	cmd.Action = func() {
-		clientConfig := e3dbClients.ClientConfig{
-			Host:      *apiBaseURL,
-			AuthNHost: *apiBaseURL,
-		}
-		identityClientConfig := identityClient.New(clientConfig)
-		sdk := e3db.ToznySDKV3{
-			APIEndpoint:        *apiBaseURL,
-			E3dbIdentityClient: &identityClientConfig,
-		}
+		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
 
-		realmInfo, err := sdk.RealmInfo(ctx, *realmName)
+		_, err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP)
 		if err != nil {
 			dieErr(err)
-		}
-		// If we have IdPs Configured, get a List
-		if realmInfo.DoIdPsExist {
-			// Generate PKCE
-			dataBytes, err := e3dbClients.GenerateRandomBytes(32)
-			pkceVerifier := e3dbClients.Base64Encode(dataBytes)
-
-			// Set up Request
-			// TODO: Verify Redirect URL is not needed since this is a cli tool and wouldnt need to redirect to example jenkins
-			request := identityClient.InitiateIdentityProviderLoginRequest{
-				RealmName:     *realmName,
-				AppName:       *appName,
-				CodeChallenge: pkceVerifier,
-				LoginStyle:    "api",
-				RedirectURL:   "",
-				Scope:         *scopes,
-			}
-			idPInfo, err := sdk.InitiateIdentityProviderLogin(ctx, request)
-			if err != nil {
-				dieErr(err)
-			}
-			// Grab Cookies required for the rest of the login flow
-			cookiesMap := idPInfo.Cookie
-
-			// Grab Providers available for realm
-			providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
-			providerRequestedFound := false
-			var allCookies string
-			for _, provider := range providers {
-				if strings.ToLower(*idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
-					// Need to set these cookies in the browser
-					// Making sure to set them for use of frame realmInfo.IdentityServiceProviderBaseURL
-					for key, value := range cookiesMap {
-						allCookies += fmt.Sprintf("%s=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;", key)
-						allCookies += fmt.Sprintf("%s=%s;Path=/;", key, value)
-					}
-					// Cookies to set on browser
-					fmt.Printf(" Cookies  %+v\n", allCookies)
-					// URL to redirect to
-					url := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
-					fmt.Printf(" URL  %+v\n", url)
-					providerRequestedFound = true
-				}
-
-			}
-			if !providerRequestedFound {
-				fmt.Printf("Provider %+v Not Found for Realm %+v \n", idP, realmName)
-			}
-		} else {
-			fmt.Printf("No Providers Found for Realm %+v \n", realmName)
 		}
 	}
 }
