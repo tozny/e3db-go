@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -41,7 +42,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/browser"
+	"github.com/tebeka/selenium"
+	"github.com/tebeka/selenium/chrome"
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/file"
@@ -163,7 +165,7 @@ type Record struct {
 }
 
 type idPLogin struct {
-	Cookies string
+	Cookies []*selenium.Cookie
 	URL     string
 }
 
@@ -1645,24 +1647,73 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 		// Grab Providers available for realm
 		providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
 		providerRequestedFound := false
-		var allCookies string
+		var allCookies []*selenium.Cookie
 		for _, provider := range providers {
 			if strings.ToLower(idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
 				// Need to set these cookies in the browser
 				// Making sure to set them for use of frame realmInfo.IdentityServiceProviderBaseURL
+				u, _ := url.Parse(realmInfo.IdentityServiceProviderBaseURL)
+
 				for key, value := range cookiesMap {
-					allCookies += fmt.Sprintf("%s=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;", key)
-					allCookies += fmt.Sprintf("%s=%s;Path=/;", key, value)
+					// 	allCookies += fmt.Sprintf("%s=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;", key)
+					// 	allCookies += fmt.Sprintf("%s=%s;Path=/;", key, value)
+
+					cookie := selenium.Cookie{
+						Name:   key,
+						Value:  value,
+						Path:   "/",
+						Domain: u.Host,
+						Expiry: math.MaxUint32,
+					}
+					// fmt.Printf("Cookie %+v", cookie)
+					allCookies = append(allCookies, &cookie)
 				}
 				returnObj.Cookies = allCookies
 				// Cookies to set on browser
-				fmt.Printf(" Cookies  %+v\n", allCookies)
+				// fmt.Printf(" Cookies  %+v\n", allCookies)
 				// URL to redirect to
 				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
 				returnObj.URL = pathURL
-				fmt.Printf(" URL  %+v\n", pathURL)
+				// fmt.Printf(" URL  %+v\n", pathURL)
 
-				browser.OpenURL(pathURL)
+				// Run Chrome browser
+				// Replace with your chrome driver (i got mine here https://chromedriver.chromium.org/getting-started)
+				_, err := selenium.NewChromeDriverService("/Users/katierosas/Desktop/chromedriver_mac_arm64/chromedriver", 4444)
+				if err != nil {
+					panic(err)
+				}
+
+				caps := selenium.Capabilities{}
+				caps.AddChrome(chrome.Capabilities{Args: []string{
+					"window-size=1920x1080",
+					"--no-sandbox",
+					"--disable-dev-shm-usage",
+					"disable-gpu",
+					// "--headless",  // comment out this line to see the browser
+				}})
+
+				driver, err := selenium.NewRemote(caps, "")
+				if err != nil {
+					panic(err)
+				}
+
+				// driver.Get("https://www.google.com")
+				// todo FIGURE OUT WHY WE CANT ADD COOKIES BEFORE OPENING UP THE WEBBROWSER
+				// for _, cookie := range allCookies {
+				// 	driver.AddCookie(cookie)
+				// }
+				// cookiesReturned, er := driver.GetCookies()
+				// fmt.Printf("cookies %+v error %+v", cookiesReturned, er)
+				// driver.AddCookie()
+				driver.Get(pathURL)
+				for _, cookie := range allCookies {
+					driver.AddCookie(cookie)
+				}
+				// cookiesReturned, er := driver.GetCookies()
+				// fmt.Printf("cookies %+v error %+v", cookiesReturned, er)
+				// refresh with cookies since we have to add them after opening
+				driver.Refresh()
+
 				providerRequestedFound = true
 			}
 
