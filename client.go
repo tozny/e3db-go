@@ -1705,15 +1705,61 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				// cookiesReturned, er := driver.GetCookies()
 				// fmt.Printf("cookies %+v error %+v", cookiesReturned, er)
 				// driver.AddCookie()
-				driver.Get(pathURL)
+				driver.Get("https://id.tozny.com")
 				for _, cookie := range allCookies {
 					driver.AddCookie(cookie)
 				}
 				// cookiesReturned, er := driver.GetCookies()
 				// fmt.Printf("cookies %+v error %+v", cookiesReturned, er)
 				// refresh with cookies since we have to add them after opening
-				driver.Refresh()
+				driver.Get(pathURL)
+				// Wait until a specific URL string is reached
+				targetUrlString := "auth_token"
+				maxWaitTime := 300 * time.Second
+				startTime := time.Now()
+				currentURL := pathURL
+				for {
+					currentURL, err = driver.CurrentURL()
+					if err != nil {
+						fmt.Println("Failed to get current URL:", err)
+						break
+					}
 
+					if strings.Contains(currentURL, targetUrlString) {
+						fmt.Println("Specific URL reached!")
+						break
+					}
+
+					if time.Since(startTime) >= maxWaitTime {
+						fmt.Println("Timeout reached. Specific URL not found.")
+						break
+					}
+
+					time.Sleep(1000 * time.Millisecond) // Wait for 1 second before checking again
+				}
+
+				// Parse the URL
+				parsedURL, err := url.Parse(currentURL)
+				if err != nil {
+					fmt.Println("Error parsing URL:", err)
+					return returnObj, err
+				}
+
+				// Get the fragment (URL fragment starts with #)
+				fragment := parsedURL.Fragment
+
+				// Parse the fragment
+				fragmentValues, err := url.ParseQuery(fragment)
+				if err != nil {
+					fmt.Println("Error parsing fragment:", err)
+					return returnObj, err
+				}
+
+				// Get the value of the "auth_token" parameter
+				authToken := fragmentValues.Get("auth_token")
+
+				fmt.Println("auth_token:", authToken)
+				defer driver.Quit()
 				providerRequestedFound = true
 			}
 
