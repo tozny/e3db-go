@@ -777,7 +777,7 @@ func cmdSignup(cmd *cli.Cmd) {
 }
 
 func cmdListIdPs(cmd *cli.Cmd) {
-	apiBaseURL := cmd.String(cli.StringOpt{
+	apiBaseURL := cmd.String(cli.StringArg{
 		Name:      "API",
 		Desc:      "e3db api base url",
 		Value:     "https://api.e3db.com",
@@ -803,7 +803,7 @@ func cmdListIdPs(cmd *cli.Cmd) {
 		HideValue: false,
 	})
 
-	cmd.Spec = "[REALM_NAME] [APP_NAME] [SCOPES]"
+	cmd.Spec = "[REALM_NAME] [APP_NAME] [API] [SCOPES]"
 
 	cmd.Action = func() {
 		sdk := e3db.ToznySDKV3{}
@@ -891,19 +891,28 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		Value:     "",
 		HideValue: false,
 	})
-	apiBaseURL := cmd.String(cli.StringOpt{
+	apiBaseURL := cmd.String(cli.StringArg{
 		Name:      "API",
 		Desc:      "e3db api base url",
 		Value:     "https://api.e3db.com",
-		HideValue: true,
+		HideValue: false,
+	})
+	chromeWebDriver := cmd.String(cli.StringArg{
+		Name:      "CHROME_WEBDRIVER_PATH",
+		Desc:      "Path to Chrome Webdriver used",
+		Value:     "",
+		HideValue: false,
 	})
 
-	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [SCOPES]"
+	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [API] [CHROME_WEBDRIVER_PATH] [SCOPES] "
 	cmd.Action = func() {
 		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
 
-		_, err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP)
+		if *chromeWebDriver == "" {
+			//todo download driver latest
+		}
+		_, err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP, *chromeWebDriver)
 		if err != nil {
 			dieErr(err)
 		}

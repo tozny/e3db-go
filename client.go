@@ -703,9 +703,8 @@ type ToznySDKV3 struct {
 	// Network location of the Tozny services to communicate with.
 	APIEndpoint string
 	// Tozny server defined globally unique id for this Client.
-	ClientID            string
-	IdentityAccessToken string // TODO-- Katie make sure to set this
-	CurrentIdentity     TozIDSessionIdentityData
+	ClientID        string
+	CurrentIdentity TozIDSessionIdentityData
 	// TozIDRealmIDPAccessToken is the tozid-realm-idp jwt given by final redirect of login flow.
 	// because it expires, it is not saved to the config file, and so can be empty.
 	TozIDRealmIDPAccessToken *string
@@ -1077,7 +1076,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	config.Username = username
 	sdk, err := sdkV3FromConfig(config)
 	if err == nil {
-		sdk.IdentityAccessToken = redirect.AccessToken
+		sdk.TozIDRealmIDPAccessToken = &redirect.AccessToken
 	}
 	return sdk, err
 
@@ -1614,7 +1613,7 @@ func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, ap
 
 }
 
-func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string) (idPLogin, error) {
+func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string, chromeWebDriverPath string) (idPLogin, error) {
 	returnObj := idPLogin{}
 	// Get Realm Info
 	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
@@ -1655,9 +1654,6 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				u, _ := url.Parse(realmInfo.IdentityServiceProviderBaseURL)
 
 				for key, value := range cookiesMap {
-					// 	allCookies += fmt.Sprintf("%s=;Path=/;Expires=Thu, 01 Jan 1970 00:00:01 GMT;", key)
-					// 	allCookies += fmt.Sprintf("%s=%s;Path=/;", key, value)
-
 					cookie := selenium.Cookie{
 						Name:   key,
 						Value:  value,
@@ -1665,7 +1661,6 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 						Domain: u.Host,
 						Expiry: math.MaxUint32,
 					}
-					// fmt.Printf("Cookie %+v", cookie)
 					allCookies = append(allCookies, &cookie)
 				}
 				returnObj.Cookies = allCookies
@@ -1678,7 +1673,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 
 				// Run Chrome browser
 				// Replace with your chrome driver (i got mine here https://chromedriver.chromium.org/getting-started)
-				_, err := selenium.NewChromeDriverService("/Users/katierosas/Desktop/chromedriver_mac_arm64/chromedriver", 4444)
+				_, err := selenium.NewChromeDriverService(chromeWebDriverPath, 4444)
 				if err != nil {
 					panic(err)
 				}
@@ -1697,15 +1692,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 					panic(err)
 				}
 
-				// driver.Get("https://www.google.com")
-				// todo FIGURE OUT WHY WE CANT ADD COOKIES BEFORE OPENING UP THE WEBBROWSER
-				// for _, cookie := range allCookies {
-				// 	driver.AddCookie(cookie)
-				// }
-				// cookiesReturned, er := driver.GetCookies()
-				// fmt.Printf("cookies %+v error %+v", cookiesReturned, er)
-				// driver.AddCookie()
-				driver.Get("https://id.tozny.com")
+				driver.Get(realmInfo.IdentityServiceProviderBaseURL)
 				for _, cookie := range allCookies {
 					driver.AddCookie(cookie)
 				}
@@ -1758,7 +1745,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				// Get the value of the "auth_token" parameter
 				authToken := fragmentValues.Get("auth_token")
 
-				fmt.Println("auth_token:", authToken)
+				c.TozIDRealmIDPAccessToken = &authToken
 				defer driver.Quit()
 				providerRequestedFound = true
 			}
