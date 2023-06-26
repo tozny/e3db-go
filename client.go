@@ -1560,6 +1560,7 @@ func (c *ToznySDKV3) Login(ctx context.Context, email string, password string, s
 	return account, nil
 }
 
+// GetRealmInfo Grabs the public realm information
 func (c *ToznySDKV3) GetRealmInfo(ctx context.Context, realmName string, apiBaseURL string) (*identityClient.RealmInfo, error) {
 	clientConfig := e3dbClients.ClientConfig{
 		Host:      apiBaseURL,
@@ -1575,6 +1576,7 @@ func (c *ToznySDKV3) GetRealmInfo(ctx context.Context, realmName string, apiBase
 	return realmInfo, nil
 }
 
+// ListAvailableIdPs lists all the Identity Providers configured for a given realm
 func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string) (string, error) {
 	idPsAvailable := ""
 	// Get Realm Info
@@ -1608,6 +1610,7 @@ func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, ap
 
 }
 
+// IdPLogin Login as an Identity Provider for a configured realm
 func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string, chromeWebDriverPath string) error {
 	// Get Realm Info
 	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
