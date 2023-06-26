@@ -908,7 +908,7 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		HideValue: false,
 	})
 
-	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [API] [CHROME_WEBDRIVER_PATH] [SCOPES] "
+	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [CHROME_WEBDRIVER_PATH] [API] [APP_NAME] [SCOPES] "
 	cmd.Action = func() {
 		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
