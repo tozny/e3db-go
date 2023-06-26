@@ -8,6 +8,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -16,10 +17,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"net/http"
 	"net/mail"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -910,7 +914,47 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		ctx := context.Background()
 
 		if *chromeWebDriver == "" {
-			//todo download driver latest
+			// Find latest version of chromedriver and download it.
+			releaseVersionUrl := "https://chromedriver.storage.googleapis.com/LATEST_RELEASE"
+			response, err := http.Get(releaseVersionUrl)
+			if err != nil {
+				fmt.Println("Error:", err)
+				return
+			}
+			defer response.Body.Close()
+			body, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				fmt.Println("Error:", err)
+				return
+			}
+			latestVersion := string(body)
+			downloadPath := "https://chromedriver.storage.googleapis.com"
+			fileName := "chromedriver_win32.zip"
+			operatingSystem := runtime.GOOS
+			switch operatingSystem {
+			case "windows":
+				fileName = "chromedriver_win32.zip"
+				break
+			case "linux":
+				fileName = "chromedriver_linux64.zip"
+				break
+			case "darwin":
+				arch := runtime.GOARCH
+				if arch == "arm64" {
+					fileName = "chromedriver_mac_arm64.zip"
+				} else {
+					fileName = "chromedriver_mac64.zip"
+				}
+				break
+			default:
+				break
+			}
+			downloadUrl := downloadPath + "/" + latestVersion + "/" + fileName
+			driverPath, err := downloadFile(downloadUrl, fileName)
+			if err != nil {
+				dieErr(errors.New(("Unable to download chromedriver please download or pass it's path in the command Ex: [REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [API] [CHROME_WEBDRIVER_PATH]")))
+			}
+			chromeWebDriver = &driverPath
 		}
 		_, err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP, *chromeWebDriver)
 		if err != nil {
@@ -1055,6 +1099,74 @@ func cmdUnbrokerShare(cmd *cli.Cmd) {
 
 		fmt.Printf("Records of type '%s' from client '%s' are now unshared with client '%s'\n", *recordType, *authorizerID, *readerID)
 	}
+}
+
+func downloadFile(url, filename string) (string, error) {
+	fmt.Printf("Downloading chromedriver from %s", url)
+	response, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, response.Body)
+	if err != nil {
+		return "", err
+	}
+	p, err := filepath.Abs(filename)
+	if err != nil {
+		return "", err
+	}
+
+	driverPath, err := unzipFile(p)
+
+	return driverPath, err
+}
+
+func unzipFile(zipFile string) (string, error) {
+	reader, err := zip.OpenReader(zipFile)
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+	driverPath := ""
+	for _, file := range reader.File {
+		path := filepath.Join(file.Name)
+
+		if file.Name == "chromedriver" {
+			driverPath, err = filepath.Abs(file.Name)
+		}
+
+		if file.FileInfo().IsDir() {
+			os.MkdirAll(path, os.ModePerm)
+			continue
+		}
+
+		fileReader, err := file.Open()
+		if err != nil {
+			return "", err
+		}
+
+		targetFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		if err != nil {
+			fileReader.Close()
+			return "", err
+		}
+
+		_, err = io.Copy(targetFile, fileReader)
+		fileReader.Close()
+		targetFile.Close()
+		if err != nil {
+			return "", err
+		}
+	}
+	return driverPath, nil
 }
 
 func main() {
