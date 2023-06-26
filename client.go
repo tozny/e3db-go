@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -41,6 +42,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tebeka/selenium"
+	"github.com/tebeka/selenium/chrome"
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/file"
@@ -1066,7 +1069,11 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 	config.TozIDRealmIDPAccessToken = &redirect.AccessToken
 	config.Realm = realmInfo.Name
 	config.Username = username
-	return sdkV3FromConfig(config)
+	sdk, err := sdkV3FromConfig(config)
+	if err == nil {
+		sdk.TozIDRealmIDPAccessToken = &redirect.AccessToken
+	}
+	return sdk, err
 
 }
 
@@ -1551,6 +1558,191 @@ func (c *ToznySDKV3) Login(ctx context.Context, email string, password string, s
 	account.Token = accountToken
 	account.Config = clientConfig
 	return account, nil
+}
+
+// GetRealmInfo Grabs the public realm information
+func (c *ToznySDKV3) GetRealmInfo(ctx context.Context, realmName string, apiBaseURL string) (*identityClient.RealmInfo, error) {
+	clientConfig := e3dbClients.ClientConfig{
+		Host:      apiBaseURL,
+		AuthNHost: apiBaseURL,
+	}
+	identityClientConfig := identityClient.New(clientConfig)
+	c.APIEndpoint = apiBaseURL
+	c.E3dbIdentityClient = &identityClientConfig
+	realmInfo, err := c.RealmInfo(ctx, realmName)
+	if err != nil {
+		return nil, err
+	}
+	return realmInfo, nil
+}
+
+// ListAvailableIdPs lists all the Identity Providers configured for a given realm
+func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string) (string, error) {
+	idPsAvailable := ""
+	// Get Realm Info
+	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
+	if err != nil {
+		return idPsAvailable, err
+	}
+	// If we have IdPs Configured, get a List
+	if realmInfo.DoIdPsExist {
+		dataBytes, err := e3dbClients.GenerateRandomBytes(32)
+		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+		request := identityClient.InitiateIdentityProviderLoginRequest{
+			RealmName:     realmName,
+			AppName:       appName,
+			CodeChallenge: pkceVerifier,
+			LoginStyle:    "api",
+			RedirectURL:   "",
+			Scope:         scopes,
+		}
+		idPInfo, err := c.InitiateIdentityProviderLogin(ctx, request)
+		if err != nil {
+			return idPsAvailable, err
+		}
+		providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
+		for _, provider := range providers {
+			idPsAvailable += fmt.Sprintf("%+v \n", provider.(map[string]interface{})["displayName"])
+		}
+	}
+
+	return idPsAvailable, nil
+
+}
+
+// IdPLogin Login as an Identity Provider for a configured realm
+func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string, chromeWebDriverPath string) error {
+	// Get Realm Info
+	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
+	if err != nil {
+		return err
+	}
+	// If we have IdPs Configured, get a List
+	if realmInfo.DoIdPsExist {
+		// Generate PKCE
+		dataBytes, err := e3dbClients.GenerateRandomBytes(32)
+		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+
+		// Set up Request
+		request := identityClient.InitiateIdentityProviderLoginRequest{
+			RealmName:     realmName,
+			AppName:       appName,
+			CodeChallenge: pkceVerifier,
+			LoginStyle:    "api",
+			RedirectURL:   "",
+			Scope:         scopes,
+		}
+		idPInfo, err := c.InitiateIdentityProviderLogin(ctx, request)
+		if err != nil {
+			return err
+		}
+		// Grab Cookies required for the rest of the login flow
+		cookiesMap := idPInfo.Cookie
+
+		// Grab Providers available for realm
+		providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
+		providerRequestedFound := false
+		var allCookies []*selenium.Cookie
+		for _, provider := range providers {
+			if strings.ToLower(idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
+				// Making sure to set them for use of frame realmInfo.IdentityServiceProviderBaseURL
+				u, _ := url.Parse(realmInfo.IdentityServiceProviderBaseURL)
+
+				for key, value := range cookiesMap {
+					cookie := selenium.Cookie{
+						Name:   key,
+						Value:  value,
+						Path:   "/",
+						Domain: u.Host,
+						Expiry: math.MaxUint32,
+					}
+					allCookies = append(allCookies, &cookie)
+				}
+				// URL to redirect to
+				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
+
+				// Run Chrome browser
+				_, err := selenium.NewChromeDriverService(chromeWebDriverPath, 4444)
+				if err != nil {
+					panic(err)
+				}
+
+				caps := selenium.Capabilities{}
+				caps.AddChrome(chrome.Capabilities{Args: []string{
+					"window-size=1920x1080",
+					"--no-sandbox",
+					"--disable-dev-shm-usage",
+					"disable-gpu",
+					// "--headless",  // comment out this line to see the browser
+				}})
+
+				driver, err := selenium.NewRemote(caps, "")
+				if err != nil {
+					panic(err)
+				}
+
+				driver.Get(realmInfo.IdentityServiceProviderBaseURL)
+				for _, cookie := range allCookies {
+					driver.AddCookie(cookie)
+				}
+				driver.Get(pathURL)
+				// Wait until a specific URL string is reached
+				targetUrlString := "auth_token"
+				maxWaitTime := 300 * time.Second
+				startTime := time.Now()
+				currentURL := pathURL
+				for {
+					currentURL, err = driver.CurrentURL()
+					if err != nil {
+						fmt.Println("Failed to get current URL:", err)
+						break
+					}
+
+					if strings.Contains(currentURL, targetUrlString) {
+						fmt.Println("Successfully Logged In")
+						break
+					}
+
+					if time.Since(startTime) >= maxWaitTime {
+						fmt.Println("Timeout reached. Specific URL not found.")
+						break
+					}
+
+					time.Sleep(1000 * time.Millisecond) // Wait for 1 second before checking again
+				}
+
+				// Parse the URL
+				parsedURL, err := url.Parse(currentURL)
+				if err != nil {
+					fmt.Println("Error parsing URL:", err)
+					return err
+				}
+
+				// Get the fragment (URL fragment starts with #)
+				fragment := parsedURL.Fragment
+
+				// Parse the fragment
+				fragmentValues, err := url.ParseQuery(fragment)
+				if err != nil {
+					fmt.Println("Error parsing fragment:", err)
+					return err
+				}
+
+				// Get the value of the "auth_token" parameter
+				authToken := fragmentValues.Get("auth_token")
+				c.TozIDRealmIDPAccessToken = &authToken
+				defer driver.Quit()
+				providerRequestedFound = true
+			}
+
+		}
+		if !providerRequestedFound {
+			fmt.Printf("Provider %+v Not Found for Realm %+v \n", idP, realmName)
+		}
+	} else {
+		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
+	}
+	return nil
 }
 
 // ConvertBrokerIdentityToClientConfig converts a broker identity to raw Tozny client credentials.

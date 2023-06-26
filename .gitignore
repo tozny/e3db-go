@@ -4,3 +4,5 @@ build
 e3db
 .env
 *~
+chromedriver*
+*.chromedriver

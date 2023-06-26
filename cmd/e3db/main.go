@@ -8,6 +8,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -16,10 +17,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"net/http"
 	"net/mail"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -776,6 +780,51 @@ func cmdSignup(cmd *cli.Cmd) {
 	}
 }
 
+func cmdListIdPs(cmd *cli.Cmd) {
+	apiBaseURL := cmd.String(cli.StringArg{
+		Name:      "API",
+		Desc:      "e3db api base url",
+		Value:     "https://api.e3db.com",
+		HideValue: true,
+	})
+	realmName := cmd.String(cli.StringArg{
+		Name:      "REALM_NAME",
+		Desc:      "Realm name to fetch",
+		Value:     "",
+		HideValue: false,
+	})
+	appName := cmd.String(cli.StringArg{
+		Name:      "APP_NAME",
+		Desc:      "App to fetch",
+		Value:     "account",
+		HideValue: false,
+	})
+
+	scopes := cmd.String(cli.StringArg{
+		Name:      "SCOPES",
+		Desc:      "Scopes used for the Identity Login",
+		Value:     "openid",
+		HideValue: false,
+	})
+
+	cmd.Spec = "[REALM_NAME] [APP_NAME] [API] [SCOPES]"
+
+	cmd.Action = func() {
+		sdk := e3db.ToznySDKV3{}
+		ctx := context.Background()
+		// If we have IdPs Configured, get a List
+		availableIdPs, err := sdk.ListAvailableIdPs(ctx, *realmName, *apiBaseURL, *appName, *scopes)
+		if err != nil {
+			dieErr(err)
+		}
+		if availableIdPs == "" {
+			fmt.Print("No Available Identity Providers Found")
+		} else {
+			fmt.Printf("Available Identity Providers: \n%+v", availableIdPs)
+		}
+	}
+}
+
 func cmdLogin(cmd *cli.Cmd) {
 	accountUsername := cmd.String(cli.StringArg{
 		Name:      "ACCOUNT_EMAIL",
@@ -817,6 +866,101 @@ func cmdLogin(cmd *cli.Cmd) {
 			dieErr(err)
 		}
 		fmt.Printf("Account Session Token: %+v\n", accountSession.Token)
+	}
+}
+
+func cmdLoginIdP(cmd *cli.Cmd) {
+	realmName := cmd.String(cli.StringArg{
+		Name:      "REALM_NAME",
+		Desc:      "Realm name to fetch",
+		Value:     "",
+		HideValue: false,
+	})
+	appName := cmd.String(cli.StringArg{
+		Name:      "APP_NAME",
+		Desc:      "App to fetch",
+		Value:     "account",
+		HideValue: false,
+	})
+	scopes := cmd.String(cli.StringArg{
+		Name:      "SCOPES",
+		Desc:      "Scopes used for the Identity Login",
+		Value:     "openid",
+		HideValue: false,
+	})
+
+	idP := cmd.String(cli.StringArg{
+		Name:      "IDENTITY_PROVIDER",
+		Desc:      "The identity provider being used for the identity Login",
+		Value:     "",
+		HideValue: false,
+	})
+	apiBaseURL := cmd.String(cli.StringArg{
+		Name:      "API",
+		Desc:      "e3db api base url",
+		Value:     "https://api.e3db.com",
+		HideValue: false,
+	})
+	chromeWebDriver := cmd.String(cli.StringArg{
+		Name:      "CHROME_WEBDRIVER_PATH",
+		Desc:      "Path to Chrome Webdriver used",
+		Value:     "",
+		HideValue: false,
+	})
+
+	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [CHROME_WEBDRIVER_PATH] [API] [APP_NAME] [SCOPES] "
+	cmd.Action = func() {
+		sdk := e3db.ToznySDKV3{}
+		ctx := context.Background()
+
+		if *chromeWebDriver == "" {
+			// Find latest version of chromedriver and download it.
+			releaseVersionUrl := "https://chromedriver.storage.googleapis.com/LATEST_RELEASE"
+			response, err := http.Get(releaseVersionUrl)
+			if err != nil {
+				fmt.Println("Error:", err)
+				return
+			}
+			defer response.Body.Close()
+			body, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				fmt.Println("Error:", err)
+				return
+			}
+			latestVersion := string(body)
+			downloadPath := "https://chromedriver.storage.googleapis.com"
+			fileName := "chromedriver_win32.zip"
+			operatingSystem := runtime.GOOS
+			switch operatingSystem {
+			case "windows":
+				fileName = "chromedriver_win32.zip"
+				break
+			case "linux":
+				fileName = "chromedriver_linux64.zip"
+				break
+			case "darwin":
+				arch := runtime.GOARCH
+				if arch == "arm64" {
+					fileName = "chromedriver_mac_arm64.zip"
+				} else {
+					fileName = "chromedriver_mac64.zip"
+				}
+				break
+			default:
+				break
+			}
+			downloadUrl := downloadPath + "/" + latestVersion + "/" + fileName
+			driverPath, err := downloadFile(downloadUrl, fileName)
+			if err != nil {
+				fmt.Printf("Unable to download chromedriver, download it manually and pass it's path in the command Ex: [REALM_NAME] [IDENTITY_PROVIDER] [CHROME_WEBDRIVER_PATH] [API] [APP_NAME] [SCOPES]")
+				dieErr(err)
+			}
+			chromeWebDriver = &driverPath
+		}
+		err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP, *chromeWebDriver)
+		if err != nil {
+			dieErr(err)
+		}
 	}
 }
 
@@ -958,6 +1102,75 @@ func cmdUnbrokerShare(cmd *cli.Cmd) {
 	}
 }
 
+func downloadFile(url, filename string) (string, error) {
+	fmt.Printf("Downloading chromedriver from %s \n", url)
+	response, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, response.Body)
+	if err != nil {
+		return "", err
+	}
+	p, err := filepath.Abs(filename)
+	if err != nil {
+		return "", err
+	}
+
+	driverPath, err := unzipFile(p)
+
+	return driverPath, err
+}
+
+func unzipFile(zipFile string) (string, error) {
+	fmt.Printf("Extracting downloaded chromedriver %s \n", zipFile)
+	reader, err := zip.OpenReader(zipFile)
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+	driverPath := ""
+	for _, file := range reader.File {
+		path := filepath.Join(file.Name)
+
+		if file.Name == "chromedriver" {
+			driverPath, err = filepath.Abs(file.Name)
+		}
+
+		if file.FileInfo().IsDir() {
+			os.MkdirAll(path, os.ModePerm)
+			continue
+		}
+
+		fileReader, err := file.Open()
+		if err != nil {
+			return "", err
+		}
+
+		targetFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		if err != nil {
+			fileReader.Close()
+			return "", err
+		}
+
+		_, err = io.Copy(targetFile, fileReader)
+		fileReader.Close()
+		targetFile.Close()
+		if err != nil {
+			return "", err
+		}
+	}
+	return driverPath, nil
+}
+
 func main() {
 	app := cli.App("e3db-cli", "E3DB Command Line Interface")
 
@@ -988,8 +1201,10 @@ func main() {
 		cmd.Command("write", "write a small file", cmdWriteFile)
 	})
 	app.Command("lsrealms", "list realms", cmdListRealms)
+	app.Command("lsIdP", "list available IdPs", cmdListIdPs)
 	app.Command("signup", "signup for a new account", cmdSignup)
 	app.Command("login", "login to fetch credentials and account token", cmdLogin)
+	app.Command("idp-login", "login to Tozny using an IdP", cmdLoginIdP)
 	app.Command("derive-account-credentials", "Ouputs Account Credentials", cmdDeriveAccountCredentials)
 	app.Run(os.Args)
 }
