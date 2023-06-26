@@ -164,11 +164,6 @@ type Record struct {
 	Data map[string]string `json:"data"`
 }
 
-type idPLogin struct {
-	Cookies []*selenium.Cookie
-	URL     string
-}
-
 // GetDefaultClient loads the default E3DB configuration profile and
 // creates a client using those options.
 func GetDefaultClient() (*Client, error) {
@@ -1613,12 +1608,11 @@ func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, ap
 
 }
 
-func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string, chromeWebDriverPath string) (idPLogin, error) {
-	returnObj := idPLogin{}
+func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string, chromeWebDriverPath string) error {
 	// Get Realm Info
 	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
 	if err != nil {
-		return returnObj, err
+		return err
 	}
 	// If we have IdPs Configured, get a List
 	if realmInfo.DoIdPsExist {
@@ -1638,7 +1632,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 		}
 		idPInfo, err := c.InitiateIdentityProviderLogin(ctx, request)
 		if err != nil {
-			return returnObj, err
+			return err
 		}
 		// Grab Cookies required for the rest of the login flow
 		cookiesMap := idPInfo.Cookie
@@ -1649,7 +1643,6 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 		var allCookies []*selenium.Cookie
 		for _, provider := range providers {
 			if strings.ToLower(idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
-				// Need to set these cookies in the browser
 				// Making sure to set them for use of frame realmInfo.IdentityServiceProviderBaseURL
 				u, _ := url.Parse(realmInfo.IdentityServiceProviderBaseURL)
 
@@ -1663,13 +1656,8 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 					}
 					allCookies = append(allCookies, &cookie)
 				}
-				returnObj.Cookies = allCookies
-				// Cookies to set on browser
-				// fmt.Printf(" Cookies  %+v\n", allCookies)
 				// URL to redirect to
 				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
-				returnObj.URL = pathURL
-				// fmt.Printf(" URL  %+v\n", pathURL)
 
 				// Run Chrome browser
 				// Replace with your chrome driver (i got mine here https://chromedriver.chromium.org/getting-started)
@@ -1696,9 +1684,6 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				for _, cookie := range allCookies {
 					driver.AddCookie(cookie)
 				}
-				// cookiesReturned, er := driver.GetCookies()
-				// fmt.Printf("cookies %+v error %+v", cookiesReturned, er)
-				// refresh with cookies since we have to add them after opening
 				driver.Get(pathURL)
 				// Wait until a specific URL string is reached
 				targetUrlString := "auth_token"
@@ -1729,7 +1714,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				parsedURL, err := url.Parse(currentURL)
 				if err != nil {
 					fmt.Println("Error parsing URL:", err)
-					return returnObj, err
+					return err
 				}
 
 				// Get the fragment (URL fragment starts with #)
@@ -1739,7 +1724,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				fragmentValues, err := url.ParseQuery(fragment)
 				if err != nil {
 					fmt.Println("Error parsing fragment:", err)
-					return returnObj, err
+					return err
 				}
 
 				// Get the value of the "auth_token" parameter
@@ -1757,7 +1742,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 	} else {
 		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
 	}
-	return returnObj, nil
+	return nil
 }
 
 // ConvertBrokerIdentityToClientConfig converts a broker identity to raw Tozny client credentials.

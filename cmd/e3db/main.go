@@ -957,7 +957,7 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 			}
 			chromeWebDriver = &driverPath
 		}
-		_, err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP, *chromeWebDriver)
+		err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP, *chromeWebDriver)
 		if err != nil {
 			dieErr(err)
 		}
