@@ -1621,7 +1621,6 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
 
 		// Set up Request
-		// TODO: Verify Redirect URL is not needed since this is a cli tool and wouldnt need to redirect to example jenkins
 		request := identityClient.InitiateIdentityProviderLoginRequest{
 			RealmName:     realmName,
 			AppName:       appName,
@@ -1660,7 +1659,6 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
 
 				// Run Chrome browser
-				// Replace with your chrome driver (i got mine here https://chromedriver.chromium.org/getting-started)
 				_, err := selenium.NewChromeDriverService(chromeWebDriverPath, 4444)
 				if err != nil {
 					panic(err)
@@ -1698,7 +1696,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 					}
 
 					if strings.Contains(currentURL, targetUrlString) {
-						fmt.Println("Specific URL reached!")
+						fmt.Println("Successfully Logged In")
 						break
 					}
 
@@ -1729,7 +1727,6 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 
 				// Get the value of the "auth_token" parameter
 				authToken := fragmentValues.Get("auth_token")
-				fmt.Printf("You auth token %+v", authToken)
 				c.TozIDRealmIDPAccessToken = &authToken
 				defer driver.Quit()
 				providerRequestedFound = true
