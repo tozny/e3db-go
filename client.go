@@ -1744,7 +1744,7 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 
 				// Get the value of the "auth_token" parameter
 				authToken := fragmentValues.Get("auth_token")
-
+				fmt.Printf("You auth token %+v", authToken)
 				c.TozIDRealmIDPAccessToken = &authToken
 				defer driver.Quit()
 				providerRequestedFound = true
