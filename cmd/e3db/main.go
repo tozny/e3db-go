@@ -952,7 +952,7 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 			downloadUrl := downloadPath + "/" + latestVersion + "/" + fileName
 			driverPath, err := downloadFile(downloadUrl, fileName)
 			if err != nil {
-				fmt.Printf("Unable to download chromedriver, download it manually and pass it's path in the command Ex: [REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [API] [CHROME_WEBDRIVER_PATH]")
+				fmt.Printf("Unable to download chromedriver, download it manually and pass it's path in the command Ex: [REALM_NAME] [IDENTITY_PROVIDER] [CHROME_WEBDRIVER_PATH] [API] [APP_NAME] [SCOPES]")
 				dieErr(err)
 			}
 			chromeWebDriver = &driverPath
