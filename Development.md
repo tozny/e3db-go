@@ -42,7 +42,7 @@ make version version=X.Y.Z
 To consume published updates from other repositories that depends on this module run
 
 ```bash
-go get github.com/tozny/e3db-clients-go@vX.Y.Z
+go get github.com/tozny/e3db-go@vX.Y.Z
 ```
 
 and the go `get` tool will fetch the published artifact and update that modules `go.mod` and`go.sum` files with the updated dependency.
