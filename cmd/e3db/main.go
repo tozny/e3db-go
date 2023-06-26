@@ -952,7 +952,8 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 			downloadUrl := downloadPath + "/" + latestVersion + "/" + fileName
 			driverPath, err := downloadFile(downloadUrl, fileName)
 			if err != nil {
-				dieErr(errors.New(("Unable to download chromedriver please download or pass it's path in the command Ex: [REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [API] [CHROME_WEBDRIVER_PATH]")))
+				fmt.Printf("Unable to download chromedriver, download it manually and pass it's path in the command Ex: [REALM_NAME] [IDENTITY_PROVIDER] [APP_NAME] [API] [CHROME_WEBDRIVER_PATH]")
+				dieErr(err)
 			}
 			chromeWebDriver = &driverPath
 		}
@@ -1102,7 +1103,7 @@ func cmdUnbrokerShare(cmd *cli.Cmd) {
 }
 
 func downloadFile(url, filename string) (string, error) {
-	fmt.Printf("Downloading chromedriver from %s", url)
+	fmt.Printf("Downloading chromedriver from %s \n", url)
 	response, err := http.Get(url)
 	if err != nil {
 		return "", err
@@ -1130,6 +1131,7 @@ func downloadFile(url, filename string) (string, error) {
 }
 
 func unzipFile(zipFile string) (string, error) {
+	fmt.Printf("Extracting downloaded chromedriver %s \n", zipFile)
 	reader, err := zip.OpenReader(zipFile)
 	if err != nil {
 		return "", err
