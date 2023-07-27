@@ -23,7 +23,6 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -913,50 +912,6 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
 
-		if *chromeWebDriver == "" {
-			// Find latest version of chromedriver and download it.
-			releaseVersionUrl := "https://chromedriver.storage.googleapis.com/LATEST_RELEASE"
-			response, err := http.Get(releaseVersionUrl)
-			if err != nil {
-				fmt.Println("Error:", err)
-				return
-			}
-			defer response.Body.Close()
-			body, err := ioutil.ReadAll(response.Body)
-			if err != nil {
-				fmt.Println("Error:", err)
-				return
-			}
-			latestVersion := string(body)
-			downloadPath := "https://chromedriver.storage.googleapis.com"
-			fileName := "chromedriver_win32.zip"
-			operatingSystem := runtime.GOOS
-			switch operatingSystem {
-			case "windows":
-				fileName = "chromedriver_win32.zip"
-				break
-			case "linux":
-				fileName = "chromedriver_linux64.zip"
-				break
-			case "darwin":
-				arch := runtime.GOARCH
-				if arch == "arm64" {
-					fileName = "chromedriver_mac_arm64.zip"
-				} else {
-					fileName = "chromedriver_mac64.zip"
-				}
-				break
-			default:
-				break
-			}
-			downloadUrl := downloadPath + "/" + latestVersion + "/" + fileName
-			driverPath, err := downloadFile(downloadUrl, fileName)
-			if err != nil {
-				fmt.Printf("Unable to download chromedriver, download it manually and pass it's path in the command Ex: [REALM_NAME] [IDENTITY_PROVIDER] [CHROME_WEBDRIVER_PATH] [API] [APP_NAME] [SCOPES]")
-				dieErr(err)
-			}
-			chromeWebDriver = &driverPath
-		}
 		err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP, *chromeWebDriver)
 		if err != nil {
 			dieErr(err)

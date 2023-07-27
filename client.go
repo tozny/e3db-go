@@ -31,7 +31,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -42,8 +44,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/skratchdot/open-golang/open"
 	"github.com/tebeka/selenium"
-	"github.com/tebeka/selenium/chrome"
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/file"
@@ -1609,6 +1611,9 @@ func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, ap
 	return idPsAvailable, nil
 
 }
+func HelloServer(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Hello, %s!", r.URL.Path[1:])
+}
 
 // IdPLogin Login as an Identity Provider for a configured realm
 func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string, chromeWebDriverPath string) error {
@@ -1619,6 +1624,21 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 	}
 	// If we have IdPs Configured, get a List
 	if realmInfo.DoIdPsExist {
+
+		// Local web browser, unique port and listening port
+
+		_, err := net.Listen("tcp", "localhost:3000")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// The browser can connect now because the listening socket is open.
+
+		err = open.Start("http://localhost:3000/test")
+		if err != nil {
+			log.Println(err)
+		}
+
 		// Generate PKCE
 		dataBytes, err := e3dbClients.GenerateRandomBytes(32)
 		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
@@ -1662,77 +1682,69 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
 
 				// Run Chrome browser
-				_, err := selenium.NewChromeDriverService(chromeWebDriverPath, 4444)
+
+				err = open.Start(realmInfo.IdentityServiceProviderBaseURL)
 				if err != nil {
-					panic(err)
+					log.Println(err)
 				}
+				// for _, cookie := range allCookies {
+				// 	driver.AddCookie(cookie)
+				// }
 
-				caps := selenium.Capabilities{}
-				caps.AddChrome(chrome.Capabilities{Args: []string{
-					"window-size=1920x1080",
-					"--no-sandbox",
-					"--disable-dev-shm-usage",
-					"disable-gpu",
-					// "--headless",  // comment out this line to see the browser
-				}})
-
-				driver, err := selenium.NewRemote(caps, "")
+				err = open.Start(pathURL)
 				if err != nil {
-					panic(err)
+					log.Println(err)
 				}
-
-				driver.Get(realmInfo.IdentityServiceProviderBaseURL)
-				for _, cookie := range allCookies {
-					driver.AddCookie(cookie)
-				}
-				driver.Get(pathURL)
+				// driver.Get(pathURL)
 				// Wait until a specific URL string is reached
-				targetUrlString := "auth_token"
-				maxWaitTime := 300 * time.Second
-				startTime := time.Now()
-				currentURL := pathURL
-				for {
-					currentURL, err = driver.CurrentURL()
-					if err != nil {
-						fmt.Println("Failed to get current URL:", err)
-						break
-					}
+				// targetUrlString := "auth_token"
+				// maxWaitTime := 300 * time.Second
+				// startTime := time.Now()
+				// currentURL := pathURL
+				// for {
+				// 	currentURL, err = driver.CurrentURL()
+				// 	if err != nil {
+				// 		fmt.Println("Failed to get current URL:", err)
+				// 		break
+				// 	}
 
-					if strings.Contains(currentURL, targetUrlString) {
-						fmt.Println("Successfully Logged In")
-						break
-					}
+				// 	if strings.Contains(currentURL, targetUrlString) {
+				// 		fmt.Println("Successfully Logged In")
+				// 		break
+				// 	}
 
-					if time.Since(startTime) >= maxWaitTime {
-						fmt.Println("Timeout reached. Specific URL not found.")
-						break
-					}
+				// 	if time.Since(startTime) >= maxWaitTime {
+				// 		fmt.Println("Timeout reached. Specific URL not found.")
+				// 		break
+				// 	}
 
-					time.Sleep(1000 * time.Millisecond) // Wait for 1 second before checking again
-				}
+				// 	time.Sleep(1000 * time.Millisecond) // Wait for 1 second before checking again
+				// }
 
 				// Parse the URL
-				parsedURL, err := url.Parse(currentURL)
-				if err != nil {
-					fmt.Println("Error parsing URL:", err)
-					return err
-				}
+				// parsedURL, err := url.Parse(currentURL)
+				// if err != nil {
+				// 	fmt.Println("Error parsing URL:", err)
+				// 	return err
+				// }
 
-				// Get the fragment (URL fragment starts with #)
-				fragment := parsedURL.Fragment
+				// // Get the fragment (URL fragment starts with #)
+				// fragment := parsedURL.Fragment
 
-				// Parse the fragment
-				fragmentValues, err := url.ParseQuery(fragment)
-				if err != nil {
-					fmt.Println("Error parsing fragment:", err)
-					return err
-				}
+				// // Parse the fragment
+				// fragmentValues, err := url.ParseQuery(fragment)
+				// if err != nil {
+				// 	fmt.Println("Error parsing fragment:", err)
+				// 	return err
+				// }
 
-				// Get the value of the "auth_token" parameter
-				authToken := fragmentValues.Get("auth_token")
-				c.TozIDRealmIDPAccessToken = &authToken
-				defer driver.Quit()
-				providerRequestedFound = true
+				// // Get the value of the "auth_token" parameter
+				// authToken := fragmentValues.Get("auth_token")
+				// c.TozIDRealmIDPAccessToken = &authToken
+
+				// // browser ends redirect to listening port
+				// defer driver.Quit()
+				// providerRequestedFound = true
 			}
 
 		}
