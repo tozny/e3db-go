@@ -24,7 +24,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -32,6 +31,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -1609,37 +1609,52 @@ func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, ap
 	return idPsAvailable, nil
 
 }
-func HelloServer(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello, %s!", r.URL.Path[1:])
+
+func randomString(length int) string {
+	rand.Seed(time.Now().UnixNano())
+	b := make([]byte, length+2)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)[2 : length+2]
 }
 
 // IdPLogin Login as an Identity Provider for a configured realm
-func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string, chromeWebDriverPath string) error {
+func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string) error {
 	// Get Realm Info
 	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
 	if err != nil {
 		return err
 	}
+
 	// If we have IdPs Configured, get a List
 	if realmInfo.DoIdPsExist {
 
 		// Local web browser, unique port and listening port
-
-		_, err := net.Listen("tcp", "localhost:3000")
+		listenerAddress := "http://localhost:3000/"
+		listener, err := net.Listen("tcp", "localhost:3000")
 		if err != nil {
 			log.Fatal(err)
 		}
+		// figure out a better way to do this
+		state := randomString(16)
 		/*
 		 "https://api.e3db.com/auth/realms/azuretest/protocol/openid-connect/auth
 		 {domain}/auth/realms/{realmName}/protocol/openid-connect/auth
 		 ?client_id={clientName}&redirect_uri={Where we are listening}&response_type=code&scope=openid&state={We create state}"
 		*/
-		// The browser can connect now because the listening socket is open.
-		authUrl := "https://api.e3db.com/auth/realms/azuretest/protocol/openid-connect/auth?client_id=cli-test&redirect_uri=https://google.com&response_type=code&scope=openid&state=N2JhOWI3ZmUtY2RiNC00"
-		err = open.Start(authUrl)
+
+		// Create Auth URL
+		authURL := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", apiBaseURL, realmInfo.Domain, appName, listenerAddress, state)
+
+		//http://localhost:3000/?state=85e2974cd9536039&session_state=25447c8e-2055-4911-9b25-d31182daef48&code=ce409887-cfb6-4ea2-8eb0-fe2bc31d963f.25447c8e-2055-4911-9b25-d31182daef48.eb062845-92cd-477a-be6a-2fe4a9b83505
+
+		// "https://api.e3db.com/auth/realms/azuretest/protocol/openid-connect/auth?client_id=cli-test&redirect_uri=https://google.com&response_type=code&scope=openid&state=N2JhOWI3ZmUtY2RiNC00"
+		err = open.Start(authURL)
 		if err != nil {
 			log.Println(err)
 		}
+		time.Sleep(30 * time.Second)
+
+		fmt.Printf("%s", listener.Addr().String())
 
 	} else {
 		fmt.Printf("No Providers Found for Realm %+v \n", realmName)

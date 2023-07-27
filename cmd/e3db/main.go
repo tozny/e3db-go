@@ -900,19 +900,13 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		Value:     "https://api.e3db.com",
 		HideValue: false,
 	})
-	chromeWebDriver := cmd.String(cli.StringArg{
-		Name:      "CHROME_WEBDRIVER_PATH",
-		Desc:      "Path to Chrome Webdriver used",
-		Value:     "",
-		HideValue: false,
-	})
 
-	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [CHROME_WEBDRIVER_PATH] [API] [APP_NAME] [SCOPES] "
+	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [API] [APP_NAME] [SCOPES] "
 	cmd.Action = func() {
 		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
 
-		err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP, *chromeWebDriver)
+		err := sdk.IdPLoginToClient(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP)
 		if err != nil {
 			dieErr(err)
 		}
