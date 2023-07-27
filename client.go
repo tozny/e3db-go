@@ -24,6 +24,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -1634,6 +1635,7 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 		if err != nil {
 			log.Fatal(err)
 		}
+		defer listener.Close()
 		// figure out a better way to do this
 		state := randomString(16)
 		/*
@@ -1652,14 +1654,63 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 		if err != nil {
 			log.Println(err)
 		}
-		time.Sleep(30 * time.Second)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				fmt.Printf("Server failed to accept connection - %s\n", err)
+				return err
+			}
 
-		fmt.Printf("%s", listener.Addr().String())
+			// handle the connection (read the data)
+			handleConnection(conn)
+		}
 
 	} else {
 		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
 	}
 	return nil
+}
+
+var (
+	done      = make(chan bool) // channel for holding exit until server finished
+	clientMD5 [16]byte          // holds md5sum of data client sent
+	serverMD5 [16]byte          // holds md5sum of data server received
+)
+
+func handleConnection(conn net.Conn) {
+	// make a temporary bytes var to read from the connection
+	tmp := make([]byte, 1024)
+	// make 0 length data bytes (since we'll be appending)
+	data := make([]byte, 0)
+	// keep track of full length read
+	length := 0
+
+	// loop through the connection stream, appending tmp to data
+	for {
+		// read to the tmp var
+		n, err := conn.Read(tmp)
+		if err != nil {
+			// log if not normal error
+			if err != io.EOF {
+				fmt.Printf("Read error - %s\n", err)
+			}
+			break
+		}
+
+		// append read data to full data
+		data = append(data, tmp[:n]...)
+
+		// update total read var
+		length += n
+	}
+
+	// store data md5
+	serverMD5 = md5.Sum(data)
+
+	// log bytes read
+	fmt.Printf("READ  %d bytes\n", length)
+
+	done <- true
 }
 
 // ConvertBrokerIdentityToClientConfig converts a broker identity to raw Tozny client credentials.
