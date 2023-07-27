@@ -907,6 +907,7 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		ctx := context.Background()
 
 		err := sdk.IdPLoginToClient(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP)
+		fmt.Printf("Access Token: %s, Refresh Token: %s, ID Token: %s", *sdk.TozIDRealmIDPAccessToken, *sdk.TozIDRealmIDPRefreshToken, *sdk.TozIDRealmIDPIDToken)
 		if err != nil {
 			dieErr(err)
 		}

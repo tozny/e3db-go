@@ -24,7 +24,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -33,7 +32,6 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -163,6 +161,12 @@ type Meta struct {
 type Record struct {
 	Meta Meta              `json:"meta"`
 	Data map[string]string `json:"data"`
+}
+
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
 }
 
 // GetDefaultClient loads the default E3DB configuration profile and
@@ -703,9 +707,11 @@ type ToznySDKV3 struct {
 	CurrentIdentity TozIDSessionIdentityData
 	// TozIDRealmIDPAccessToken is the tozid-realm-idp jwt given by final redirect of login flow.
 	// because it expires, it is not saved to the config file, and so can be empty.
-	TozIDRealmIDPAccessToken *string
-	config                   e3dbClients.ClientConfig
-	akCache                  map[akCacheKey]e3dbClients.SymmetricKey
+	TozIDRealmIDPAccessToken  *string
+	TozIDRealmIDPRefreshToken *string
+	TozIDRealmIDPIDToken      *string
+	config                    e3dbClients.ClientConfig
+	akCache                   map[akCacheKey]e3dbClients.SymmetricKey
 }
 
 // LoggedInIdentityData represents data about the identity session of a given user. Currently that is just realm and
@@ -1628,42 +1634,38 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 
 	// If we have IdPs Configured, get a List
 	if realmInfo.DoIdPsExist {
+		var ret TokenResponse
 
-		// Local web browser, unique port and listening port
-		listenerAddress := "http://localhost:3000/"
-		listener, err := net.Listen("tcp", "localhost:3000")
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer listener.Close()
-		// figure out a better way to do this
 		state := randomString(16)
-		/*
-		 "https://api.e3db.com/auth/realms/azuretest/protocol/openid-connect/auth
-		 {domain}/auth/realms/{realmName}/protocol/openid-connect/auth
-		 ?client_id={clientName}&redirect_uri={Where we are listening}&response_type=code&scope=openid&state={We create state}"
-		*/
+		oidcBase := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect", apiBaseURL, realmInfo.Domain)
+		//TODO DYNAMICALLY DECIDE THIS
+		port := ":3333"
+		listenerAddress := fmt.Sprintf("http://localhost%s", port)
+
+		mux := http.NewServeMux()
+
+		server := http.Server{Addr: port, Handler: mux}
+		//TODO GET CLIENT SECRET FROM PASSED PARAMS
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			exchangeCodeForToken(w, r, oidcBase, state, appName, "2f5b5738-e01f-41ef-bd39-21cffa94ea85", &server, &ret)
+		})
 
 		// Create Auth URL
-		authURL := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", apiBaseURL, realmInfo.Domain, appName, listenerAddress, state)
 
-		//http://localhost:3000/?state=85e2974cd9536039&session_state=25447c8e-2055-4911-9b25-d31182daef48&code=ce409887-cfb6-4ea2-8eb0-fe2bc31d963f.25447c8e-2055-4911-9b25-d31182daef48.eb062845-92cd-477a-be6a-2fe4a9b83505
+		authURL := fmt.Sprintf("%s/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", oidcBase, appName, listenerAddress, state)
 
-		// "https://api.e3db.com/auth/realms/azuretest/protocol/openid-connect/auth?client_id=cli-test&redirect_uri=https://google.com&response_type=code&scope=openid&state=N2JhOWI3ZmUtY2RiNC00"
 		err = open.Start(authURL)
 		if err != nil {
 			log.Println(err)
 		}
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				fmt.Printf("Server failed to accept connection - %s\n", err)
-				return err
-			}
-
-			// handle the connection (read the data)
-			handleConnection(conn)
+		err = server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Println(err)
+			fmt.Println("IN HERE")
 		}
+		c.TozIDRealmIDPAccessToken = &ret.AccessToken
+		c.TozIDRealmIDPRefreshToken = &ret.RefreshToken
+		c.TozIDRealmIDPIDToken = &ret.IDToken
 
 	} else {
 		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
@@ -1677,40 +1679,42 @@ var (
 	serverMD5 [16]byte          // holds md5sum of data server received
 )
 
-func handleConnection(conn net.Conn) {
-	// make a temporary bytes var to read from the connection
-	tmp := make([]byte, 1024)
-	// make 0 length data bytes (since we'll be appending)
-	data := make([]byte, 0)
-	// keep track of full length read
-	length := 0
+// TODO CLEAN UP ORDER OF PARAMS
+func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, oidcBase string, state string, client string, clientSecret string, server *http.Server, tokenReturn *TokenResponse) {
+	urlValues := r.URL.Query()
+	requestState := urlValues.Get("state")
+	if state != requestState {
+		fmt.Printf("REQUEST STATE: %s, OUR STATE: %s", requestState, state)
+		return
+	}
+	code := urlValues.Get("code")
+	if len(code) == 0 {
+		return
+	}
+	data := url.Values{}
+	data.Set("grant_type", "authorization_code")
+	data.Set("code", code)
+	data.Set("client_id", client)
+	data.Set("client_secret", clientSecret)
+	data.Set("redirect_uri", "http://"+r.Host)
 
-	// loop through the connection stream, appending tmp to data
-	for {
-		// read to the tmp var
-		n, err := conn.Read(tmp)
-		if err != nil {
-			// log if not normal error
-			if err != io.EOF {
-				fmt.Printf("Read error - %s\n", err)
-			}
-			break
-		}
-
-		// append read data to full data
-		data = append(data, tmp[:n]...)
-
-		// update total read var
-		length += n
+	tokenEndpoint := oidcBase + "/token"
+	resp, err := http.Post(tokenEndpoint, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
+	if err != nil {
+		fmt.Printf("%+v", err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
 	}
 
-	// store data md5
-	serverMD5 = md5.Sum(data)
+	json.Unmarshal(body, &tokenReturn)
 
-	// log bytes read
-	fmt.Printf("READ  %d bytes\n", length)
-
-	done <- true
+	err = server.Shutdown(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 // ConvertBrokerIdentityToClientConfig converts a broker identity to raw Tozny client credentials.
