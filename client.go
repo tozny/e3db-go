@@ -32,7 +32,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"math"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -45,7 +44,6 @@ import (
 	"time"
 
 	"github.com/skratchdot/open-golang/open"
-	"github.com/tebeka/selenium"
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/file"
@@ -1631,126 +1629,18 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 		if err != nil {
 			log.Fatal(err)
 		}
-
+		/*
+		 "https://api.e3db.com/auth/realms/azuretest/protocol/openid-connect/auth
+		 {domain}/auth/realms/{realmName}/protocol/openid-connect/auth
+		 ?client_id={clientName}&redirect_uri={Where we are listening}&response_type=code&scope=openid&state={We create state}"
+		*/
 		// The browser can connect now because the listening socket is open.
-
-		err = open.Start("http://localhost:3000/test")
+		authUrl := "https://api.e3db.com/auth/realms/azuretest/protocol/openid-connect/auth?client_id=cli-test&redirect_uri=https://google.com&response_type=code&scope=openid&state=N2JhOWI3ZmUtY2RiNC00"
+		err = open.Start(authUrl)
 		if err != nil {
 			log.Println(err)
 		}
 
-		// Generate PKCE
-		dataBytes, err := e3dbClients.GenerateRandomBytes(32)
-		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
-
-		// Set up Request
-		request := identityClient.InitiateIdentityProviderLoginRequest{
-			RealmName:     realmName,
-			AppName:       appName,
-			CodeChallenge: pkceVerifier,
-			LoginStyle:    "api",
-			RedirectURL:   "",
-			Scope:         scopes,
-		}
-		idPInfo, err := c.InitiateIdentityProviderLogin(ctx, request)
-		if err != nil {
-			return err
-		}
-		// Grab Cookies required for the rest of the login flow
-		cookiesMap := idPInfo.Cookie
-
-		// Grab Providers available for realm
-		providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
-		providerRequestedFound := false
-		var allCookies []*selenium.Cookie
-		for _, provider := range providers {
-			if strings.ToLower(idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
-				// Making sure to set them for use of frame realmInfo.IdentityServiceProviderBaseURL
-				u, _ := url.Parse(realmInfo.IdentityServiceProviderBaseURL)
-
-				for key, value := range cookiesMap {
-					cookie := selenium.Cookie{
-						Name:   key,
-						Value:  value,
-						Path:   "/",
-						Domain: u.Host,
-						Expiry: math.MaxUint32,
-					}
-					allCookies = append(allCookies, &cookie)
-				}
-				// URL to redirect to
-				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
-
-				// Run Chrome browser
-
-				err = open.Start(realmInfo.IdentityServiceProviderBaseURL)
-				if err != nil {
-					log.Println(err)
-				}
-				// for _, cookie := range allCookies {
-				// 	driver.AddCookie(cookie)
-				// }
-
-				err = open.Start(pathURL)
-				if err != nil {
-					log.Println(err)
-				}
-				// driver.Get(pathURL)
-				// Wait until a specific URL string is reached
-				// targetUrlString := "auth_token"
-				// maxWaitTime := 300 * time.Second
-				// startTime := time.Now()
-				// currentURL := pathURL
-				// for {
-				// 	currentURL, err = driver.CurrentURL()
-				// 	if err != nil {
-				// 		fmt.Println("Failed to get current URL:", err)
-				// 		break
-				// 	}
-
-				// 	if strings.Contains(currentURL, targetUrlString) {
-				// 		fmt.Println("Successfully Logged In")
-				// 		break
-				// 	}
-
-				// 	if time.Since(startTime) >= maxWaitTime {
-				// 		fmt.Println("Timeout reached. Specific URL not found.")
-				// 		break
-				// 	}
-
-				// 	time.Sleep(1000 * time.Millisecond) // Wait for 1 second before checking again
-				// }
-
-				// Parse the URL
-				// parsedURL, err := url.Parse(currentURL)
-				// if err != nil {
-				// 	fmt.Println("Error parsing URL:", err)
-				// 	return err
-				// }
-
-				// // Get the fragment (URL fragment starts with #)
-				// fragment := parsedURL.Fragment
-
-				// // Parse the fragment
-				// fragmentValues, err := url.ParseQuery(fragment)
-				// if err != nil {
-				// 	fmt.Println("Error parsing fragment:", err)
-				// 	return err
-				// }
-
-				// // Get the value of the "auth_token" parameter
-				// authToken := fragmentValues.Get("auth_token")
-				// c.TozIDRealmIDPAccessToken = &authToken
-
-				// // browser ends redirect to listening port
-				// defer driver.Quit()
-				// providerRequestedFound = true
-			}
-
-		}
-		if !providerRequestedFound {
-			fmt.Printf("Provider %+v Not Found for Realm %+v \n", idP, realmName)
-		}
 	} else {
 		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
 	}
