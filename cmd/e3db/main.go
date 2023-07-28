@@ -875,25 +875,6 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		Value:     "",
 		HideValue: false,
 	})
-	appName := cmd.String(cli.StringArg{
-		Name:      "APP_NAME",
-		Desc:      "App to fetch",
-		Value:     "account",
-		HideValue: false,
-	})
-	scopes := cmd.String(cli.StringArg{
-		Name:      "SCOPES",
-		Desc:      "Scopes used for the Identity Login",
-		Value:     "openid",
-		HideValue: false,
-	})
-
-	idP := cmd.String(cli.StringArg{
-		Name:      "IDENTITY_PROVIDER",
-		Desc:      "The identity provider being used for the identity Login",
-		Value:     "",
-		HideValue: false,
-	})
 	apiBaseURL := cmd.String(cli.StringArg{
 		Name:      "API",
 		Desc:      "e3db api base url",
@@ -901,12 +882,24 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		HideValue: false,
 	})
 
-	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [API] [APP_NAME] [SCOPES] "
+	clientSecret := cmd.String(cli.StringArg{
+		Name:      "CLIENT_SECRET",
+		Desc:      "Client application secret",
+		Value:     "",
+		HideValue: false,
+	})
+	clientName := cmd.String(cli.StringArg{
+		Name:      "CLIENT_NAME",
+		Desc:      "Client application name",
+		Value:     "account",
+		HideValue: false,
+	})
+
+	cmd.Spec = "[API] [REALM_NAME] [CLIENT_NAME] [CLIENT_SECRET] "
 	cmd.Action = func() {
 		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
-
-		err := sdk.IdPLoginToClient(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP)
+		err := sdk.IdPLoginToClient(ctx, *realmName, *apiBaseURL, *clientName, *clientSecret)
 		fmt.Printf("Access Token: %s, Refresh Token: %s, ID Token: %s", *sdk.TozIDRealmIDPAccessToken, *sdk.TozIDRealmIDPRefreshToken, *sdk.TozIDRealmIDPIDToken)
 		if err != nil {
 			dieErr(err)

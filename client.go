@@ -32,6 +32,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -1625,7 +1626,7 @@ func randomString(length int) string {
 }
 
 // IdPLogin Login as an Identity Provider for a configured realm
-func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string) error {
+func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, apiBaseURL string, clientApplicationName string, clientApplicationSecret string) error {
 	// Get Realm Info
 	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
 	if err != nil {
@@ -1634,38 +1635,47 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 
 	// If we have IdPs Configured, get a List
 	if realmInfo.DoIdPsExist {
-		var ret TokenResponse
-
+		var tokenReturnedResponse TokenResponse
+		// Set up OIDC state variable
 		state := randomString(16)
-		oidcBase := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect", apiBaseURL, realmInfo.Domain)
-		//TODO DYNAMICALLY DECIDE THIS
-		port := ":3333"
-		listenerAddress := fmt.Sprintf("http://localhost%s", port)
 
+		// Find next available port
+		listener, err := net.Listen("tcp", ":0")
+		if err != nil {
+			panic(err)
+		}
+		availablePort := fmt.Sprint(listener.Addr().(*net.TCPAddr).Port)
+		_ = listener.Close()
+		// Close listener
+
+		// Set available port addresses
+		fullPathAddress := fmt.Sprintf("http://localhost:%s", availablePort)
+		hostURL := fmt.Sprintf("localhost:%s", availablePort)
+
+		// Set up OIDC Base URL
+		oidcBaseURL := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect", apiBaseURL, realmInfo.Domain)
 		mux := http.NewServeMux()
-
-		server := http.Server{Addr: port, Handler: mux}
-		//TODO GET CLIENT SECRET FROM PASSED PARAMS
+		server := http.Server{Addr: hostURL, Handler: mux}
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			exchangeCodeForToken(w, r, oidcBase, state, appName, "2f5b5738-e01f-41ef-bd39-21cffa94ea85", &server, &ret)
+			exchangeCodeForToken(w, r, &tokenReturnedResponse, &server, oidcBaseURL, state, clientApplicationName, clientApplicationName)
 		})
 
 		// Create Auth URL
+		authURL := fmt.Sprintf("%s/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", oidcBaseURL, clientApplicationName, fullPathAddress, state)
 
-		authURL := fmt.Sprintf("%s/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", oidcBase, appName, listenerAddress, state)
-
+		// Open browser
 		err = open.Start(authURL)
 		if err != nil {
 			log.Println(err)
 		}
+		// Begin Server
 		err = server.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			log.Println(err)
-			fmt.Println("IN HERE")
 		}
-		c.TozIDRealmIDPAccessToken = &ret.AccessToken
-		c.TozIDRealmIDPRefreshToken = &ret.RefreshToken
-		c.TozIDRealmIDPIDToken = &ret.IDToken
+		c.TozIDRealmIDPAccessToken = &tokenReturnedResponse.AccessToken
+		c.TozIDRealmIDPRefreshToken = &tokenReturnedResponse.RefreshToken
+		c.TozIDRealmIDPIDToken = &tokenReturnedResponse.IDToken
 
 	} else {
 		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
@@ -1673,45 +1683,44 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 	return nil
 }
 
-var (
-	done      = make(chan bool) // channel for holding exit until server finished
-	clientMD5 [16]byte          // holds md5sum of data client sent
-	serverMD5 [16]byte          // holds md5sum of data server received
-)
-
-// TODO CLEAN UP ORDER OF PARAMS
-func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, oidcBase string, state string, client string, clientSecret string, server *http.Server, tokenReturn *TokenResponse) {
+func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *TokenResponse, server *http.Server, oidcBaseURL string, requestedState string, clientApplicationName string, clientApplicationSecret string) {
+	// Grab URL Query
 	urlValues := r.URL.Query()
 	requestState := urlValues.Get("state")
-	if state != requestState {
-		fmt.Printf("REQUEST STATE: %s, OUR STATE: %s", requestState, state)
+	if requestedState != requestState {
+		http.Error(w, "Server State does not match requested state", http.StatusBadRequest)
 		return
 	}
 	code := urlValues.Get("code")
 	if len(code) == 0 {
+		http.Error(w, "Code not found ", http.StatusBadRequest)
 		return
 	}
+	// Set URL Query parameter
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
-	data.Set("client_id", client)
-	data.Set("client_secret", clientSecret)
+	data.Set("client_id", clientApplicationName)
+	data.Set("client_secret", clientApplicationSecret)
 	data.Set("redirect_uri", "http://"+r.Host)
 
-	tokenEndpoint := oidcBase + "/token"
-	resp, err := http.Post(tokenEndpoint, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
+	// Set up token URL
+	tokenEndpointURL := oidcBaseURL + "/token"
+	resp, err := http.Post(tokenEndpointURL, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
 	if err != nil {
-		fmt.Printf("%+v", err)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println(err)
 	}
-
+	// Unmarshal response into return object
 	json.Unmarshal(body, &tokenReturn)
 
-	err = server.Shutdown(context.Background())
+	// Shut down server
+	err = server.Shutdown(r.Context())
 	if err != nil {
 		log.Fatal(err)
 	}
