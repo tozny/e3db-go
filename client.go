@@ -1657,7 +1657,7 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 		mux := http.NewServeMux()
 		server := http.Server{Addr: hostURL, Handler: mux}
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			exchangeCodeForToken(w, r, &tokenReturnedResponse, &server, oidcBaseURL, state, clientApplicationName, clientApplicationName)
+			exchangeCodeForToken(w, r, &tokenReturnedResponse, &server, oidcBaseURL, state, clientApplicationName, clientApplicationSecret)
 		})
 
 		// Create Auth URL
@@ -1684,16 +1684,23 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 }
 
 func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *TokenResponse, server *http.Server, oidcBaseURL string, requestedState string, clientApplicationName string, clientApplicationSecret string) {
+	defer func() {
+		go server.Shutdown(r.Context())
+	}()
 	// Grab URL Query
 	urlValues := r.URL.Query()
 	requestState := urlValues.Get("state")
 	if requestedState != requestState {
-		http.Error(w, "Server State does not match requested state", http.StatusBadRequest)
+		errMessage := "Server State does not match requested state"
+		http.Error(w, errMessage, http.StatusBadRequest)
+		fmt.Println(errMessage)
 		return
 	}
 	code := urlValues.Get("code")
 	if len(code) == 0 {
-		http.Error(w, "Code not found ", http.StatusBadRequest)
+		errMessage := "Code not found"
+		http.Error(w, errMessage, http.StatusBadRequest)
+		fmt.Println(errMessage)
 		return
 	}
 	// Set URL Query parameter
@@ -1709,21 +1716,23 @@ func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *T
 	resp, err := http.Post(tokenEndpointURL, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		fmt.Printf("Unable to successfully get token. Err: %+v\n", err)
 		return
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		fmt.Printf("Unable to read body. Err: %+v\n", err)
 	}
 	// Unmarshal response into return object
 	err = json.Unmarshal(body, &tokenReturn)
 	if err != nil {
-		fmt.Println(err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		fmt.Printf("Unable to populate token return object. Err: %+v\n", err)
 	}
 	w.WriteHeader(200)
 	w.Write([]byte("<h1>You can now close this tab!</h1>"))
-	go server.Shutdown(r.Context())
 
 }
 
