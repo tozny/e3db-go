@@ -24,14 +24,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math"
+	"log"
+	"math/rand"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -42,8 +43,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tebeka/selenium"
-	"github.com/tebeka/selenium/chrome"
+	"github.com/skratchdot/open-golang/open"
 	e3dbClients "github.com/tozny/e3db-clients-go"
 	"github.com/tozny/e3db-clients-go/accountClient"
 	"github.com/tozny/e3db-clients-go/file"
@@ -162,6 +162,12 @@ type Meta struct {
 type Record struct {
 	Meta Meta              `json:"meta"`
 	Data map[string]string `json:"data"`
+}
+
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
 }
 
 // GetDefaultClient loads the default E3DB configuration profile and
@@ -702,9 +708,11 @@ type ToznySDKV3 struct {
 	CurrentIdentity TozIDSessionIdentityData
 	// TozIDRealmIDPAccessToken is the tozid-realm-idp jwt given by final redirect of login flow.
 	// because it expires, it is not saved to the config file, and so can be empty.
-	TozIDRealmIDPAccessToken *string
-	config                   e3dbClients.ClientConfig
-	akCache                  map[akCacheKey]e3dbClients.SymmetricKey
+	TozIDRealmIDPAccessToken  *string
+	TozIDRealmIDPRefreshToken *string
+	TozIDRealmIDPIDToken      *string
+	config                    e3dbClients.ClientConfig
+	akCache                   map[akCacheKey]e3dbClients.SymmetricKey
 }
 
 // LoggedInIdentityData represents data about the identity session of a given user. Currently that is just realm and
@@ -1610,8 +1618,15 @@ func (c *ToznySDKV3) ListAvailableIdPs(ctx context.Context, realmName string, ap
 
 }
 
+func randomString(length int) string {
+	rand.Seed(time.Now().UnixNano())
+	b := make([]byte, length+2)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)[2 : length+2]
+}
+
 // IdPLogin Login as an Identity Provider for a configured realm
-func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL string, appName string, scopes string, idP string, chromeWebDriverPath string) error {
+func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, apiBaseURL string, clientApplicationName string) error {
 	// Get Realm Info
 	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
 	if err != nil {
@@ -1619,130 +1634,106 @@ func (c *ToznySDKV3) IdPLogin(ctx context.Context, realmName string, apiBaseURL 
 	}
 	// If we have IdPs Configured, get a List
 	if realmInfo.DoIdPsExist {
-		// Generate PKCE
-		dataBytes, err := e3dbClients.GenerateRandomBytes(32)
-		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+		var tokenReturnedResponse TokenResponse
+		// Set up OIDC state variable
+		state := randomString(16)
 
-		// Set up Request
-		request := identityClient.InitiateIdentityProviderLoginRequest{
-			RealmName:     realmName,
-			AppName:       appName,
-			CodeChallenge: pkceVerifier,
-			LoginStyle:    "api",
-			RedirectURL:   "",
-			Scope:         scopes,
-		}
-		idPInfo, err := c.InitiateIdentityProviderLogin(ctx, request)
+		// Find next available port
+		listener, err := net.Listen("tcp", ":0")
 		if err != nil {
+			panic(err)
+		}
+		availablePort := fmt.Sprint(listener.Addr().(*net.TCPAddr).Port)
+		_ = listener.Close()
+		// Close listener
+
+		// Set available port addresses
+		fullPathAddress := fmt.Sprintf("http://localhost:%s", availablePort)
+		hostURL := fmt.Sprintf("localhost:%s", availablePort)
+
+		// Set up OIDC Base URL
+		oidcBaseURL := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect", apiBaseURL, realmInfo.Domain)
+		mux := http.NewServeMux()
+		server := http.Server{Addr: hostURL, Handler: mux}
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			exchangeCodeForToken(w, r, &tokenReturnedResponse, &server, oidcBaseURL, state, clientApplicationName)
+		})
+
+		// Create Auth URL
+		authURL := fmt.Sprintf("%s/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", oidcBaseURL, clientApplicationName, fullPathAddress, state)
+
+		// Open browser
+		err = open.Start(authURL)
+		if err != nil {
+			log.Println(err)
 			return err
 		}
-		// Grab Cookies required for the rest of the login flow
-		cookiesMap := idPInfo.Cookie
-
-		// Grab Providers available for realm
-		providers := idPInfo.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
-		providerRequestedFound := false
-		var allCookies []*selenium.Cookie
-		for _, provider := range providers {
-			if strings.ToLower(idP) == strings.ToLower(provider.(map[string]interface{})["displayName"].(string)) {
-				// Making sure to set them for use of frame realmInfo.IdentityServiceProviderBaseURL
-				u, _ := url.Parse(realmInfo.IdentityServiceProviderBaseURL)
-
-				for key, value := range cookiesMap {
-					cookie := selenium.Cookie{
-						Name:   key,
-						Value:  value,
-						Path:   "/",
-						Domain: u.Host,
-						Expiry: math.MaxUint32,
-					}
-					allCookies = append(allCookies, &cookie)
-				}
-				// URL to redirect to
-				pathURL := realmInfo.IdentityServiceProviderBaseURL + provider.(map[string]interface{})["loginUrl"].(string)
-
-				// Run Chrome browser
-				_, err := selenium.NewChromeDriverService(chromeWebDriverPath, 4444)
-				if err != nil {
-					panic(err)
-				}
-
-				caps := selenium.Capabilities{}
-				caps.AddChrome(chrome.Capabilities{Args: []string{
-					"window-size=1920x1080",
-					"--no-sandbox",
-					"--disable-dev-shm-usage",
-					"disable-gpu",
-					// "--headless",  // comment out this line to see the browser
-				}})
-
-				driver, err := selenium.NewRemote(caps, "")
-				if err != nil {
-					panic(err)
-				}
-
-				driver.Get(realmInfo.IdentityServiceProviderBaseURL)
-				for _, cookie := range allCookies {
-					driver.AddCookie(cookie)
-				}
-				driver.Get(pathURL)
-				// Wait until a specific URL string is reached
-				targetUrlString := "auth_token"
-				maxWaitTime := 300 * time.Second
-				startTime := time.Now()
-				currentURL := pathURL
-				for {
-					currentURL, err = driver.CurrentURL()
-					if err != nil {
-						fmt.Println("Failed to get current URL:", err)
-						break
-					}
-
-					if strings.Contains(currentURL, targetUrlString) {
-						fmt.Println("Successfully Logged In")
-						break
-					}
-
-					if time.Since(startTime) >= maxWaitTime {
-						fmt.Println("Timeout reached. Specific URL not found.")
-						break
-					}
-
-					time.Sleep(1000 * time.Millisecond) // Wait for 1 second before checking again
-				}
-
-				// Parse the URL
-				parsedURL, err := url.Parse(currentURL)
-				if err != nil {
-					fmt.Println("Error parsing URL:", err)
-					return err
-				}
-
-				// Get the fragment (URL fragment starts with #)
-				fragment := parsedURL.Fragment
-
-				// Parse the fragment
-				fragmentValues, err := url.ParseQuery(fragment)
-				if err != nil {
-					fmt.Println("Error parsing fragment:", err)
-					return err
-				}
-
-				// Get the value of the "auth_token" parameter
-				authToken := fragmentValues.Get("auth_token")
-				c.TozIDRealmIDPAccessToken = &authToken
-				defer driver.Quit()
-				providerRequestedFound = true
-			}
-
+		// Begin Server
+		err = server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Println(err)
+			return err
 		}
-		if !providerRequestedFound {
-			fmt.Printf("Provider %+v Not Found for Realm %+v \n", idP, realmName)
-		}
+		c.TozIDRealmIDPAccessToken = &tokenReturnedResponse.AccessToken
+		c.TozIDRealmIDPRefreshToken = &tokenReturnedResponse.RefreshToken
+		c.TozIDRealmIDPIDToken = &tokenReturnedResponse.IDToken
+
 	} else {
 		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
 	}
 	return nil
+}
+
+func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *TokenResponse, server *http.Server, oidcBaseURL string, requestedState string, clientApplicationName string) {
+	defer func() {
+		go server.Shutdown(r.Context())
+	}()
+	// Grab URL Query
+	urlValues := r.URL.Query()
+	requestState := urlValues.Get("state")
+	if requestedState != requestState {
+		errMessage := "Server State does not match requested state"
+		http.Error(w, errMessage, http.StatusBadRequest)
+		fmt.Println(errMessage)
+		return
+	}
+	code := urlValues.Get("code")
+	if len(code) == 0 {
+		errMessage := "Code not found"
+		http.Error(w, errMessage, http.StatusBadRequest)
+		fmt.Println(errMessage)
+		return
+	}
+	// Set URL Query parameter
+	data := url.Values{}
+	data.Set("grant_type", "authorization_code")
+	data.Set("code", code)
+	data.Set("client_id", clientApplicationName)
+	data.Set("redirect_uri", "http://"+r.Host)
+
+	// Set up token URL
+	tokenEndpointURL := oidcBaseURL + "/token"
+	resp, err := http.Post(tokenEndpointURL, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		fmt.Printf("Unable to successfully get token. Err: %+v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		fmt.Printf("Unable to read body. Err: %+v\n", err)
+	}
+	// Unmarshal response into return object
+	err = json.Unmarshal(body, &tokenReturn)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		fmt.Printf("Unable to populate token return object. Err: %+v\n", err)
+	}
+	w.WriteHeader(200)
+	w.Write([]byte("<h1>You can now close this tab!</h1>"))
+
 }
 
 // ConvertBrokerIdentityToClientConfig converts a broker identity to raw Tozny client credentials.

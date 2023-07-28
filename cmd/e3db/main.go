@@ -23,7 +23,6 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -876,88 +875,25 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		Value:     "",
 		HideValue: false,
 	})
-	appName := cmd.String(cli.StringArg{
-		Name:      "APP_NAME",
-		Desc:      "App to fetch",
-		Value:     "account",
-		HideValue: false,
-	})
-	scopes := cmd.String(cli.StringArg{
-		Name:      "SCOPES",
-		Desc:      "Scopes used for the Identity Login",
-		Value:     "openid",
-		HideValue: false,
-	})
-
-	idP := cmd.String(cli.StringArg{
-		Name:      "IDENTITY_PROVIDER",
-		Desc:      "The identity provider being used for the identity Login",
-		Value:     "",
-		HideValue: false,
-	})
 	apiBaseURL := cmd.String(cli.StringArg{
 		Name:      "API",
 		Desc:      "e3db api base url",
 		Value:     "https://api.e3db.com",
 		HideValue: false,
 	})
-	chromeWebDriver := cmd.String(cli.StringArg{
-		Name:      "CHROME_WEBDRIVER_PATH",
-		Desc:      "Path to Chrome Webdriver used",
-		Value:     "",
+
+	clientName := cmd.String(cli.StringArg{
+		Name:      "CLIENT_NAME",
+		Desc:      "Client application name",
+		Value:     "account",
 		HideValue: false,
 	})
 
-	cmd.Spec = "[REALM_NAME] [IDENTITY_PROVIDER] [CHROME_WEBDRIVER_PATH] [API] [APP_NAME] [SCOPES] "
+	cmd.Spec = "[API] [REALM_NAME] [CLIENT_NAME]"
 	cmd.Action = func() {
 		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
-
-		if *chromeWebDriver == "" {
-			// Find latest version of chromedriver and download it.
-			releaseVersionUrl := "https://chromedriver.storage.googleapis.com/LATEST_RELEASE"
-			response, err := http.Get(releaseVersionUrl)
-			if err != nil {
-				fmt.Println("Error:", err)
-				return
-			}
-			defer response.Body.Close()
-			body, err := ioutil.ReadAll(response.Body)
-			if err != nil {
-				fmt.Println("Error:", err)
-				return
-			}
-			latestVersion := string(body)
-			downloadPath := "https://chromedriver.storage.googleapis.com"
-			fileName := "chromedriver_win32.zip"
-			operatingSystem := runtime.GOOS
-			switch operatingSystem {
-			case "windows":
-				fileName = "chromedriver_win32.zip"
-				break
-			case "linux":
-				fileName = "chromedriver_linux64.zip"
-				break
-			case "darwin":
-				arch := runtime.GOARCH
-				if arch == "arm64" {
-					fileName = "chromedriver_mac_arm64.zip"
-				} else {
-					fileName = "chromedriver_mac64.zip"
-				}
-				break
-			default:
-				break
-			}
-			downloadUrl := downloadPath + "/" + latestVersion + "/" + fileName
-			driverPath, err := downloadFile(downloadUrl, fileName)
-			if err != nil {
-				fmt.Printf("Unable to download chromedriver, download it manually and pass it's path in the command Ex: [REALM_NAME] [IDENTITY_PROVIDER] [CHROME_WEBDRIVER_PATH] [API] [APP_NAME] [SCOPES]")
-				dieErr(err)
-			}
-			chromeWebDriver = &driverPath
-		}
-		err := sdk.IdPLogin(ctx, *realmName, *apiBaseURL, *appName, *scopes, *idP, *chromeWebDriver)
+		err := sdk.IdPLoginToClient(ctx, *realmName, *apiBaseURL, *clientName)
 		if err != nil {
 			dieErr(err)
 		}
