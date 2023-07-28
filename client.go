@@ -1717,10 +1717,8 @@ func getAuthorizationCodeAndCookies(w http.ResponseWriter, r *http.Request, auth
 		fmt.Println(errMessage)
 		return
 	}
-	r.Cookies()
 
 	authCodeResponse.Location = fmt.Sprintf("?state=%s&session_state=%s&code=%s", requestState, sessionState, code)
-	fmt.Printf("Cookies %+v", r)
 	authCodeResponse.Cookies = r.Cookies()
 
 	w.WriteHeader(200)
