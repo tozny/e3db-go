@@ -170,6 +170,11 @@ type TokenResponse struct {
 	IDToken      string `json:"id_token"`
 }
 
+type AuthCodeResponse struct {
+	Location string         `json:"location"`
+	Cookies  []*http.Cookie `json:"cookies"`
+}
+
 // GetDefaultClient loads the default E3DB configuration profile and
 // creates a client using those options.
 func GetDefaultClient() (*Client, error) {
@@ -711,6 +716,8 @@ type ToznySDKV3 struct {
 	TozIDRealmIDPAccessToken  *string
 	TozIDRealmIDPRefreshToken *string
 	TozIDRealmIDPIDToken      *string
+	Location                  *string
+	Cookies                   *[]*http.Cookie
 	config                    e3dbClients.ClientConfig
 	akCache                   map[akCacheKey]e3dbClients.SymmetricKey
 }
@@ -1623,6 +1630,102 @@ func randomString(length int) string {
 	b := make([]byte, length+2)
 	rand.Read(b)
 	return fmt.Sprintf("%x", b)[2 : length+2]
+}
+
+// IdPLogin Login as an Identity Provider for a configured realm
+func (c *ToznySDKV3) GetAuthCodeForIDPClient(ctx context.Context, realmName string, apiBaseURL string, clientApplicationName string) error {
+	// Get Realm Info
+	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
+	if err != nil {
+		return err
+	}
+	// If we have IdPs Configured, get a List
+	if realmInfo.DoIdPsExist {
+		var authCodeResponse AuthCodeResponse
+		// Set up OIDC state variable
+		state := randomString(16)
+
+		// Find next available port
+		listener, err := net.Listen("tcp", ":0")
+		if err != nil {
+			panic(err)
+		}
+		availablePort := fmt.Sprint(listener.Addr().(*net.TCPAddr).Port)
+		_ = listener.Close()
+		// Close listener
+
+		// Set available port addresses
+		fullPathAddress := fmt.Sprintf("http://localhost:%s", availablePort)
+		hostURL := fmt.Sprintf("localhost:%s", availablePort)
+
+		// Set up OIDC Base URL
+		oidcBaseURL := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect", apiBaseURL, realmInfo.Domain)
+		mux := http.NewServeMux()
+		server := http.Server{Addr: hostURL, Handler: mux}
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			getAuthorizationCodeAndCookies(w, r, &authCodeResponse, &server, oidcBaseURL, state)
+		})
+
+		// Create Auth URL
+		authURL := fmt.Sprintf("%s/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", oidcBaseURL, clientApplicationName, fullPathAddress, state)
+
+		// Open browser
+		err = open.Start(authURL)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		// Begin Server
+		err = server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Println(err)
+			return err
+		}
+		c.Location = &authCodeResponse.Location
+		c.Cookies = &authCodeResponse.Cookies
+
+	} else {
+		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
+	}
+	return nil
+}
+
+func getAuthorizationCodeAndCookies(w http.ResponseWriter, r *http.Request, authCodeResponse *AuthCodeResponse, server *http.Server, oidcBaseURL string, requestedState string) {
+	defer func() {
+		go server.Shutdown(r.Context())
+	}()
+	// Grab URL Query
+	urlValues := r.URL.Query()
+	requestState := urlValues.Get("state")
+	if requestedState != requestState {
+		errMessage := "Server State does not match requested state"
+		http.Error(w, errMessage, http.StatusBadRequest)
+		fmt.Println(errMessage)
+		return
+	}
+	code := urlValues.Get("code")
+	if len(code) == 0 {
+		errMessage := "Code not found"
+		http.Error(w, errMessage, http.StatusBadRequest)
+		fmt.Println(errMessage)
+		return
+	}
+	sessionState := urlValues.Get("session_state")
+	if len(code) == 0 {
+		errMessage := "Code not found"
+		http.Error(w, errMessage, http.StatusBadRequest)
+		fmt.Println(errMessage)
+		return
+	}
+	r.Cookies()
+
+	authCodeResponse.Location = fmt.Sprintf("?state=%s&session_state=%s&code=%s", requestState, sessionState, code)
+	fmt.Printf("Cookies %+v", r)
+	authCodeResponse.Cookies = r.Cookies()
+
+	w.WriteHeader(200)
+	w.Write([]byte("<h1>You can now close this tab!</h1>"))
+
 }
 
 // IdPLogin Login as an Identity Provider for a configured realm

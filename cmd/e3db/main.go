@@ -900,6 +900,38 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 	}
 }
 
+func cmdGetAuthCodeForIDPClient(cmd *cli.Cmd) {
+	realmName := cmd.String(cli.StringArg{
+		Name:      "REALM_NAME",
+		Desc:      "Realm name to fetch",
+		Value:     "",
+		HideValue: false,
+	})
+	apiBaseURL := cmd.String(cli.StringArg{
+		Name:      "API",
+		Desc:      "e3db api base url",
+		Value:     "https://api.e3db.com",
+		HideValue: false,
+	})
+
+	clientName := cmd.String(cli.StringArg{
+		Name:      "CLIENT_NAME",
+		Desc:      "Client application name",
+		Value:     "account",
+		HideValue: false,
+	})
+
+	cmd.Spec = "[API] [REALM_NAME] [CLIENT_NAME]"
+	cmd.Action = func() {
+		sdk := e3db.ToznySDKV3{}
+		ctx := context.Background()
+		err := sdk.GetAuthCodeForIDPClient(ctx, *realmName, *apiBaseURL, *clientName)
+		if err != nil {
+			dieErr(err)
+		}
+	}
+}
+
 func cmdAuthorizeSharer(cmd *cli.Cmd) {
 	recordType := cmd.String(cli.StringArg{
 		Name:      "TYPE",
@@ -1141,6 +1173,7 @@ func main() {
 	app.Command("signup", "signup for a new account", cmdSignup)
 	app.Command("login", "login to fetch credentials and account token", cmdLogin)
 	app.Command("idp-login", "login to Tozny using an IdP", cmdLoginIdP)
+	app.Command("get-auth-code-for-idp-client", "Get the authentication code for the idp client login", cmdGetAuthCodeForIDPClient)
 	app.Command("derive-account-credentials", "Ouputs Account Credentials", cmdDeriveAccountCredentials)
 	app.Run(os.Args)
 }
