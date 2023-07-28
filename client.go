@@ -1626,13 +1626,12 @@ func randomString(length int) string {
 }
 
 // IdPLogin Login as an Identity Provider for a configured realm
-func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, apiBaseURL string, clientApplicationName string, clientApplicationSecret string) error {
+func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, apiBaseURL string, clientApplicationName string) error {
 	// Get Realm Info
 	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
 	if err != nil {
 		return err
 	}
-
 	// If we have IdPs Configured, get a List
 	if realmInfo.DoIdPsExist {
 		var tokenReturnedResponse TokenResponse
@@ -1657,7 +1656,7 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 		mux := http.NewServeMux()
 		server := http.Server{Addr: hostURL, Handler: mux}
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			exchangeCodeForToken(w, r, &tokenReturnedResponse, &server, oidcBaseURL, state, clientApplicationName, clientApplicationSecret)
+			exchangeCodeForToken(w, r, &tokenReturnedResponse, &server, oidcBaseURL, state, clientApplicationName)
 		})
 
 		// Create Auth URL
@@ -1667,11 +1666,13 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 		err = open.Start(authURL)
 		if err != nil {
 			log.Println(err)
+			return err
 		}
 		// Begin Server
 		err = server.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			log.Println(err)
+			return err
 		}
 		c.TozIDRealmIDPAccessToken = &tokenReturnedResponse.AccessToken
 		c.TozIDRealmIDPRefreshToken = &tokenReturnedResponse.RefreshToken
@@ -1683,7 +1684,7 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 	return nil
 }
 
-func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *TokenResponse, server *http.Server, oidcBaseURL string, requestedState string, clientApplicationName string, clientApplicationSecret string) {
+func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *TokenResponse, server *http.Server, oidcBaseURL string, requestedState string, clientApplicationName string) {
 	defer func() {
 		go server.Shutdown(r.Context())
 	}()
@@ -1708,7 +1709,6 @@ func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *T
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
 	data.Set("client_id", clientApplicationName)
-	data.Set("client_secret", clientApplicationSecret)
 	data.Set("redirect_uri", "http://"+r.Host)
 
 	// Set up token URL

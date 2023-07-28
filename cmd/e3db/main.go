@@ -882,12 +882,6 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		HideValue: false,
 	})
 
-	clientSecret := cmd.String(cli.StringArg{
-		Name:      "CLIENT_SECRET",
-		Desc:      "Client application secret",
-		Value:     "",
-		HideValue: false,
-	})
 	clientName := cmd.String(cli.StringArg{
 		Name:      "CLIENT_NAME",
 		Desc:      "Client application name",
@@ -895,12 +889,11 @@ func cmdLoginIdP(cmd *cli.Cmd) {
 		HideValue: false,
 	})
 
-	cmd.Spec = "[API] [REALM_NAME] [CLIENT_NAME] [CLIENT_SECRET] "
+	cmd.Spec = "[API] [REALM_NAME] [CLIENT_NAME]"
 	cmd.Action = func() {
 		sdk := e3db.ToznySDKV3{}
 		ctx := context.Background()
-		err := sdk.IdPLoginToClient(ctx, *realmName, *apiBaseURL, *clientName, *clientSecret)
-		fmt.Printf("Access Token: %s, Refresh Token: %s, ID Token: %s", *sdk.TozIDRealmIDPAccessToken, *sdk.TozIDRealmIDPRefreshToken, *sdk.TozIDRealmIDPIDToken)
+		err := sdk.IdPLoginToClient(ctx, *realmName, *apiBaseURL, *clientName)
 		if err != nil {
 			dieErr(err)
 		}
