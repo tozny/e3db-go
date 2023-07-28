@@ -1712,7 +1712,7 @@ func getAuthorizationCodeAndCookies(w http.ResponseWriter, r *http.Request, auth
 	}
 	sessionState := urlValues.Get("session_state")
 	if len(code) == 0 {
-		errMessage := "Code not found"
+		errMessage := "Session state not found"
 		http.Error(w, errMessage, http.StatusBadRequest)
 		fmt.Println(errMessage)
 		return
