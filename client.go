@@ -1717,13 +1717,14 @@ func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *T
 		fmt.Println(err)
 	}
 	// Unmarshal response into return object
-	json.Unmarshal(body, &tokenReturn)
-
-	// Shut down server
-	err = server.Shutdown(r.Context())
+	err = json.Unmarshal(body, &tokenReturn)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
+	w.WriteHeader(200)
+	w.Write([]byte("<h1>You can now close this tab!</h1>"))
+	go server.Shutdown(r.Context())
+
 }
 
 // ConvertBrokerIdentityToClientConfig converts a broker identity to raw Tozny client credentials.
