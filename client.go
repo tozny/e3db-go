@@ -1792,6 +1792,48 @@ func (c *ToznySDKV3) IdPLoginToClientApp(ctx context.Context, realmName string, 
 		// Create Auth URL
 		//authURL := fmt.Sprintf("%s/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", oidcBaseURL, clientApplicationName, fullPathAddress, state)
 
+		//4. Do broker login call
+		// extracting the tab_id and session_id from the action url
+		loginRequestUrl := req.URL
+		actionUrl := loginRequestUrl.Query().Get("action")
+		actionUrlParsed, err := url.Parse(actionUrl)
+		if err != nil {
+			return fmt.Errorf("error parsing url %v: %v", actionUrl, res.StatusCode)
+		}
+		sessionCode := actionUrlParsed.Query().Get("session_code")
+		tabId := actionUrlParsed.Query().Get("tab_id")
+
+		brokerLoginPath := fmt.Sprintf("/auth/realms/%s/broker/azure/login", realmInfo.Domain)
+		brokerLoginURL := url.URL{
+			Scheme: loginRequestUrl.Scheme,
+			Host:   loginRequestUrl.Host,
+			Path:   brokerLoginPath,
+		}
+
+		queryParams := brokerLoginURL.Query()
+		queryParams.Set("client_id", "tozid-external-idp") // pass the client_id
+		queryParams.Set("tab_id", tabId)
+		queryParams.Set("session_code", sessionCode)
+		brokerLoginURL.RawQuery = queryParams.Encode()
+
+		brokerLoginReq, err := http.NewRequest("GET", brokerLoginURL.String(), nil)
+		if err != nil {
+			return err
+		}
+		brokerLoginRes, err := client.Do(brokerLoginReq)
+		if err != nil {
+			return err
+		}
+		//resBuf := new(bytes.Buffer)
+		//_, err = io.Copy(resBuf, brokerLoginRes.Body)
+		//if err != nil {
+		//	return err
+		//}
+		brokerLoginRes.Body.Close()
+		if brokerLoginRes.StatusCode != 303 {
+			return fmt.Errorf("unexpected status code: %v", res.StatusCode)
+		}
+
 		// Open browser
 		//err = open.Start(authURL)
 		if err != nil {
