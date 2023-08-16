@@ -34,6 +34,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httputil"
 	"net/url"
 	"os"
@@ -1664,6 +1665,135 @@ func (c *ToznySDKV3) IdPLoginToClient(ctx context.Context, realmName string, api
 
 		// Open browser
 		err = open.Start(authURL)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		// Begin Server
+		err = server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Println(err)
+			return err
+		}
+		c.TozIDRealmIDPAccessToken = &tokenReturnedResponse.AccessToken
+		c.TozIDRealmIDPRefreshToken = &tokenReturnedResponse.RefreshToken
+		c.TozIDRealmIDPIDToken = &tokenReturnedResponse.IDToken
+
+	} else {
+		fmt.Printf("No Providers Found for Realm %+v \n", realmName)
+	}
+	return nil
+}
+
+func (c *ToznySDKV3) IdPLoginToClientApp(ctx context.Context, realmName string, apiBaseURL string, clientApplicationName string, clientLoginUrl string) error {
+	// Get Realm Info
+	realmInfo, err := c.GetRealmInfo(ctx, realmName, apiBaseURL)
+	if err != nil {
+		return err
+	}
+	// If we have IdPs Configured, get a List
+	if realmInfo.DoIdPsExist {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			log.Fatalf("Got error while creating cookie jar %s", err.Error())
+		}
+		client := &http.Client{
+			Jar: jar,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		var tokenReturnedResponse TokenResponse
+		// Set up OIDC state variable
+		state := randomString(16)
+
+		// Find next available port
+		listener, err := net.Listen("tcp", ":0")
+		if err != nil {
+			panic(err)
+		}
+		availablePort := fmt.Sprint(listener.Addr().(*net.TCPAddr).Port)
+		_ = listener.Close()
+		// Close listener
+
+		// Set available port addresses
+		//fullPathAddress := fmt.Sprintf("http://localhost:%s", availablePort)
+		hostURL := fmt.Sprintf("localhost:%s", availablePort)
+
+		// Set up OIDC Base URL
+		oidcBaseURL := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect", apiBaseURL, realmInfo.Domain)
+		mux := http.NewServeMux()
+		server := http.Server{Addr: hostURL, Handler: mux}
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			exchangeCodeForToken(w, r, &tokenReturnedResponse, &server, oidcBaseURL, state, clientApplicationName)
+		})
+
+		//1. Do Client App Login Call to kickstart authorization
+		req, err := http.NewRequest("GET", clientLoginUrl, nil)
+		if err != nil {
+			return err
+		}
+		res, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		buf := new(bytes.Buffer)
+		_, err = io.Copy(buf, res.Body)
+		if err != nil {
+			return err
+		}
+
+		res.Body.Close()
+		if res.StatusCode != 302 {
+			return fmt.Errorf("unexpected status code: %v", res.StatusCode)
+		}
+		nUrl := res.Header.Get("Location")
+
+		//2. Redirect to OIDC auth call to Tozny
+		req, err = http.NewRequest("GET", nUrl, nil)
+		if err != nil {
+			return err
+		}
+		res, err = client.Do(req)
+		if err != nil {
+			return err
+		}
+		buf = new(bytes.Buffer)
+		_, err = io.Copy(buf, res.Body)
+		if err != nil {
+			return err
+		}
+		res.Body.Close()
+		if res.StatusCode != 303 {
+			return fmt.Errorf("unexpected status code: %v", res.StatusCode)
+		}
+		nUrl = res.Header.Get("Location")
+
+		//3. Redirect to ID Portal
+		req, err = http.NewRequest("GET", nUrl, nil)
+		if err != nil {
+			return err
+		}
+		res, err = client.Do(req)
+		if err != nil {
+			return err
+		}
+		buf = new(bytes.Buffer)
+		_, err = io.Copy(buf, res.Body)
+		if err != nil {
+			return err
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			return fmt.Errorf("unexpected status code: %v", res.StatusCode)
+		}
+		nUrl = res.Header.Get("Location")
+
+		// Create Auth URL
+		//authURL := fmt.Sprintf("%s/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", oidcBaseURL, clientApplicationName, fullPathAddress, state)
+
+		// Open browser
+		//err = open.Start(authURL)
 		if err != nil {
 			log.Println(err)
 			return err
