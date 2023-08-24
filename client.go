@@ -1708,11 +1708,15 @@ func (c *ToznySDKV3) IdPLoginToClientApp(ctx context.Context, realmName string, 
 		state := randomString(16)
 
 		// Find next available port
-		listener, err := net.Listen("tcp", ":0")
 		if err != nil {
 			panic(err)
 		}
-		availablePort := fmt.Sprint(listener.Addr().(*net.TCPAddr).Port)
+		availablePort := "64565"
+		//availablePort := fmt.Sprint(listener.Addr().(*net.TCPAddr).Port)
+		listener, err := net.Listen("tcp", ":"+availablePort)
+		if err != nil {
+			return fmt.Errorf("can't listen on port %q: %s", availablePort, err)
+		}
 		_ = listener.Close()
 		// Close listener
 
@@ -1720,12 +1724,42 @@ func (c *ToznySDKV3) IdPLoginToClientApp(ctx context.Context, realmName string, 
 		//fullPathAddress := fmt.Sprintf("http://localhost:%s", availablePort)
 		hostURL := fmt.Sprintf("localhost:%s", availablePort)
 
+		var authRedirectUri string
+		var authUrl *url.URL
+
 		// Set up OIDC Base URL
 		oidcBaseURL := fmt.Sprintf("%s/auth/realms/%s/protocol/openid-connect", apiBaseURL, realmInfo.Domain)
 		mux := http.NewServeMux()
 		server := http.Server{Addr: hostURL, Handler: mux}
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			exchangeCodeForToken(w, r, &tokenReturnedResponse, &server, oidcBaseURL, state, clientApplicationName)
+		})
+		mux.HandleFunc("/endpoint", func(w http.ResponseWriter, r *http.Request) {
+			queryParams := r.URL.Query()
+			fmt.Printf("query params: %v\n", queryParams)
+			fmt.Printf("Auth Code: %v\n", queryParams.Get("code"))
+
+			// invoke token endpoint
+			//tokenEndpoint := "https://login.microsoftonline.com/1288e68b-aeb4-4a69-b877-2ca18b95076f/oauth2/v2.0/token"
+			endpointUrl, _ := url.Parse(authRedirectUri)
+			endpointUrl.RawQuery = queryParams.Encode()
+			endpointUrlStr := endpointUrl.String()
+			authUrlStr := authUrl.String()
+			fmt.Println(authUrlStr)
+			req, err := http.NewRequest("GET", endpointUrlStr, nil)
+			if err != nil {
+				fmt.Errorf("error when invoking token endpoint: %v\n", err)
+			}
+			res, err := client.Do(req)
+			if err != nil {
+				fmt.Errorf("error when invoking token endpoint: %v\n", err)
+			}
+			buf := new(bytes.Buffer)
+			_, err = io.Copy(buf, res.Body)
+			if err != nil {
+				fmt.Errorf("error when invoking token endpoint: %v\n", err)
+			}
+			res.Body.Close()
 		})
 
 		//1. Do Client App Login Call to kickstart authorization
@@ -1748,6 +1782,9 @@ func (c *ToznySDKV3) IdPLoginToClientApp(ctx context.Context, realmName string, 
 			return fmt.Errorf("unexpected status code: %v", res.StatusCode)
 		}
 		nUrl := res.Header.Get("Location")
+		if len(nUrl) == 0 {
+			return fmt.Errorf("unable to find location in response headers for %v", req.URL.String())
+		}
 
 		//2. Redirect to OIDC auth call to Tozny
 		req, err = http.NewRequest("GET", nUrl, nil)
@@ -1787,55 +1824,158 @@ func (c *ToznySDKV3) IdPLoginToClientApp(ctx context.Context, realmName string, 
 		if res.StatusCode != 200 {
 			return fmt.Errorf("unexpected status code: %v", res.StatusCode)
 		}
-		nUrl = res.Header.Get("Location")
+		//nUrl = res.Header.Get("Location")
 
 		// Create Auth URL
 		//authURL := fmt.Sprintf("%s/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid&state=%s", oidcBaseURL, clientApplicationName, fullPathAddress, state)
 
-		//4. Do broker login call
-		// extracting the tab_id and session_id from the action url
-		loginRequestUrl := req.URL
-		actionUrl := loginRequestUrl.Query().Get("action")
-		actionUrlParsed, err := url.Parse(actionUrl)
-		if err != nil {
-			return fmt.Errorf("error parsing url %v: %v", actionUrl, res.StatusCode)
-		}
-		sessionCode := actionUrlParsed.Query().Get("session_code")
-		tabId := actionUrlParsed.Query().Get("tab_id")
-
-		brokerLoginPath := fmt.Sprintf("/auth/realms/%s/broker/azure/login", realmInfo.Domain)
-		brokerLoginURL := url.URL{
-			Scheme: loginRequestUrl.Scheme,
-			Host:   loginRequestUrl.Host,
-			Path:   brokerLoginPath,
-		}
-
-		queryParams := brokerLoginURL.Query()
-		queryParams.Set("client_id", "tozid-external-idp") // pass the client_id
-		queryParams.Set("tab_id", tabId)
-		queryParams.Set("session_code", sessionCode)
-		brokerLoginURL.RawQuery = queryParams.Encode()
-
-		brokerLoginReq, err := http.NewRequest("GET", brokerLoginURL.String(), nil)
+		// 4. Initiate IDP login
+		loginUrl, err := url.Parse(nUrl)
 		if err != nil {
 			return err
+		}
+		dataBytes, err := e3dbClients.GenerateRandomBytes(32)
+		pkceVerifier := e3dbClients.Base64Encode(dataBytes)
+		request := identityClient.InitiateIdentityProviderLoginRequest{
+			RealmName:     realmName,
+			AppName:       "account",
+			CodeChallenge: pkceVerifier,
+			LoginStyle:    "api",
+			RedirectURL:   loginUrl.String(),
+			Scope:         loginUrl.Query().Get("scope"),
+		}
+		idpLoginResponse, err := c.InitiateIdentityProviderLogin(ctx, request)
+		if err != nil {
+			return err
+		}
+		providers := idpLoginResponse.Context.(map[string]interface{})["idp_providers"].(map[string]interface{})["providers"].([]interface{})
+		var brokerLoginPath string
+		for _, provider := range providers {
+			if provider.(map[string]interface{})["alias"] == "azure" {
+				brokerLoginPath = fmt.Sprintf("%+v", provider.(map[string]interface{})["loginUrl"])
+			}
+		}
+		brokerLoginUrl, err := url.Parse(brokerLoginPath)
+		if err != nil {
+			return err
+		}
+		brokerLoginUrl.Scheme = loginUrl.Scheme
+		brokerLoginUrl.Host = loginUrl.Host
+
+		// reset cookies
+		//fmt.Printf("Cookies: %v\n", idpLoginResponse.Cookie)
+		////apiPath := fmt.Sprintf("/auth/realms/%s/", realmName)
+		////apiUrlTemp := apiBaseURL + apiPath
+		//apiUrl, _ := url.Parse(apiBaseURL)
+		//existingCookies := client.Jar.Cookies(apiUrl)
+		//for _, cookie := range existingCookies {
+		//	cookie.Expires = time.Time{}
+		//	//for k, v := range idpLoginResponse.Cookie {
+		//	//	if cookie.Name == k {
+		//	//		cookie.Value = v
+		//	//	}
+		//	//}
+		//}
+		//var cookies []*http.Cookie
+		//for k, v := range idpLoginResponse.Cookie {
+		//	cookie := http.Cookie{
+		//		Name:  k,
+		//		Value: v,
+		//	}
+		//	cookies = append(cookies, &cookie)
+		//}
+		//client.Jar.SetCookies(apiUrl, existingCookies)
+
+		// extracting the tab_id and session_id from the action url
+		//loginRequestUrl := req.URL
+		//actionUrl := loginRequestUrl.Query().Get("action")
+		//actionUrlParsed, err := url.Parse(actionUrl)
+		//if err != nil {
+		//	return fmt.Errorf("error parsing url %v: %v", actionUrl, res.StatusCode)
+		//}
+		//sessionCode := actionUrlParsed.Query().Get("session_code")
+		//tabId := actionUrlParsed.Query().Get("tab_id")
+		//
+		//brokerLoginPath := fmt.Sprintf("/auth/realms/%s/broker/azure/login", realmInfo.Domain)
+		//brokerLoginUrl := url.URL{
+		//	Scheme: loginRequestUrl.Scheme,
+		//	Host:   loginRequestUrl.Host,
+		//	Path:   brokerLoginPath,
+		//}
+
+		//queryParams := brokerLoginUrl.Query()
+		//queryParams.Set("client_id", "tozid-external-idp") // pass the client_id
+		//queryParams.Set("tab_id", tabId)
+		//queryParams.Set("session_code", sessionCode)
+		//brokerLoginUrl.RawQuery = queryParams.Encode()
+
+		//jar2, err := cookiejar.New(nil)
+		//if err != nil {
+		//	log.Fatalf("Got error while creating cookie jar %s", err.Error())
+		//}
+		//var cookies []*http.Cookie
+		//for k, v := range idpLoginResponse.Cookie {
+		//	cookie := http.Cookie{
+		//		Name:  k,
+		//		Value: v,
+		//	}
+		//	cookies = append(cookies, &cookie)
+		//}
+		//jar2.SetCookies(apiUrl, cookies)
+		//client2 := &http.Client{
+		//	Jar: jar2,
+		//	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		//		return http.ErrUseLastResponse
+		//	},
+		//}
+
+		//5. Do broker login call
+		brokerLoginReq, err := http.NewRequest("GET", brokerLoginUrl.String(), nil)
+		if err != nil {
+			return err
+		}
+		var cookies []*http.Cookie
+		for k, v := range idpLoginResponse.Cookie {
+			cookie := http.Cookie{
+				Name:  k,
+				Value: v,
+			}
+			cookies = append(cookies, &cookie)
+		}
+		for _, cookie := range cookies {
+			brokerLoginReq.AddCookie(cookie)
 		}
 		brokerLoginRes, err := client.Do(brokerLoginReq)
 		if err != nil {
 			return err
 		}
-		//resBuf := new(bytes.Buffer)
-		//_, err = io.Copy(resBuf, brokerLoginRes.Body)
-		//if err != nil {
-		//	return err
-		//}
+		resBuf := new(bytes.Buffer)
+		_, err = io.Copy(resBuf, brokerLoginRes.Body)
+		if err != nil {
+			return err
+		}
 		brokerLoginRes.Body.Close()
 		if brokerLoginRes.StatusCode != 303 {
-			return fmt.Errorf("unexpected status code: %v", res.StatusCode)
+			return fmt.Errorf("unexpected status code: %v", brokerLoginRes.StatusCode)
 		}
 
+		nextUrl := brokerLoginRes.Header.Get("Location")
+
+		authUrl, _ = url.Parse(nextUrl)
+		authRedirectUri = authUrl.Query().Get("redirect_uri")
+
+		authRedirectUriParsed, _ := url.Parse(authRedirectUri)
+
+		authRedirectUriParsed.Scheme = "http"
+		authRedirectUriParsed.Host = hostURL
+		authRedirectUriParsed.Path = "/endpoint"
+		authQueryParams := authUrl.Query()
+		authQueryParams.Set("redirect_uri", authRedirectUriParsed.String())
+
+		authUrl.RawQuery = authQueryParams.Encode()
+
 		// Open browser
-		//err = open.Start(authURL)
+		err = open.Start(authUrl.String())
 		if err != nil {
 			log.Println(err)
 			return err
