@@ -1,9 +1,7 @@
 language: go
 
 go:
-  - 1.18
-  - 1.19
-  - 1.20
+  - 1.18.4
 
 cache:
   directories:
@@ -11,6 +9,8 @@ cache:
     - $HOME/gopath/pkg/mod
 
 before_install:
+  - sudo apt-get update
+  - sudo apt-get install -y jq
   - go mod download
 
 install:
