@@ -42,9 +42,8 @@ func dieErr(err error) {
 
 func setup() {
 	fmt.Println("Starting setup...")
-
 	// Check and log environment variables
-	apiURL := os.Getenv("API_URL")
+	apiURL := "https://api.e3db.com"
 	token := os.Getenv("REGISTRATION_TOKEN")
 	fmt.Printf("API_URL: %s\n", apiURL)
 	fmt.Printf("REGISTRATION_TOKEN: %s\n", token[:5]+"...") // Only show first 5 characters
