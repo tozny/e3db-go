@@ -880,6 +880,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 			if err != nil {
 				return nil, err
 			}
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 			err = e3dbClients.MakeSignedServiceCall(ctx, &http.Client{}, request, signingKeys, "", &sessionResponse)
 			if err != nil {
 				return nil, err
