@@ -235,7 +235,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 
 	if backup {
 		if privateKey == "" {
-			return nil, apiURL, errors.New("Cannot back up client credentials without a private key!")
+			return nil, apiURL, errors.New("cannot back up client credentials without a private key")
 		}
 
 		pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey)
