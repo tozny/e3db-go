@@ -240,7 +240,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 	fmt.Printf("Raw API Response (Status %d):\n%s\n", resp.StatusCode, string(body))
 
 	// Check if the status code indicates an error
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, apiURL, fmt.Errorf("API returned non-200 status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
