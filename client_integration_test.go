@@ -93,6 +93,7 @@ func setup() {
 	}
 
 	fmt.Printf("Registering client: %s\n", clientName)
+	fmt.Printf("Registering client to : %s\n", apiURL)
 	clientDetails, _, err := RegisterClient(token, clientName, pub, "", false, apiURL)
 	if err != nil {
 		fmt.Printf("Error registering client: %v\n", err)

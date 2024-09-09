@@ -199,6 +199,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 	if apiURL == "" {
 		apiURL = DefaultStorageURL
 	}
+	fmt.Printf("Sending API Url: %s\n", apiURL)
 
 	request := &clientRegistrationRequest{
 		Token: registrationToken,
