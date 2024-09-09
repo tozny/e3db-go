@@ -222,6 +222,7 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 		return nil, apiURL, fmt.Errorf("failed to create request: %v", err)
 	}
 
+	fmt.Printf("Request: %+v\n", req)
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -312,7 +313,7 @@ func (err *httpError) Error() string {
 }
 
 func closeResp(resp *http.Response) {
-	io.Copy(ioutil.Discard, resp.Body)
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 }
 
