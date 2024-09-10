@@ -43,10 +43,8 @@ func dieErr(err error) {
 func setup() {
 	fmt.Println("Starting setup...")
 	// Check and log environment variables
-	apiURL := "https://api.e3db.com"
-	token := "b80a10bb1db01be18ea631f327e5800edfab57a3d0580f0cffd159e0fe038348"
-	fmt.Printf("API_URL: %s\n", apiURL)
-	fmt.Printf("REGISTRATION_TOKEN: %s\n", token[:5]+"...") // Only show first 5 characters
+	apiURL := os.Getenv("API_URL")
+	token := os.Getenv("REGISTRATION_TOKEN")
 
 	if apiURL == "" || token == "" {
 		fmt.Println("Error: API_URL or REGISTRATION_TOKEN is not set")
@@ -92,15 +90,12 @@ func setup() {
 		dieErr(err)
 	}
 
-	fmt.Printf("Registering client: %s\n", clientName)
-	fmt.Printf("Registering client to : %s\n", apiURL)
 	clientDetails, _, err := RegisterClient(token, clientName, pub, "", false, apiURL)
 	if err != nil {
 		fmt.Printf("Error registering client: %v\n", err)
 		dieErr(err)
 	}
 
-	fmt.Printf("Registering share client: %s\n", shareClientName)
 	shareClientDetails, _, err := RegisterClient(token, shareClientName, pub2, "", false, apiURL)
 	if err != nil {
 		fmt.Printf("Error registering share client: %v\n", err)
