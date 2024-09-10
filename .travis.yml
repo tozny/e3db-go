@@ -1,12 +1,23 @@
 language: go
 
 go:
-  - 1.13
-  - 1.15
+  - 1.18.4
+  - 1.17.x
+  - 1.16.x
+
+cache:
+  directories:
+    - $HOME/.cache/go-build
+    - $HOME/gopath/pkg/mod
+
+before_install:
+  - sudo apt-get update
+  - sudo apt-get install -y jq
+  - go mod download
 
 install:
   - go build
-  - go get github.com/mattn/goveralls
+  - go install github.com/mattn/goveralls@latest
   - ./travis-install-configfile.sh
 
 script:

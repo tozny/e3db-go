@@ -5,6 +5,7 @@
 // All Rights Reserved.
 //
 
+//go:build integration
 // +build integration
 
 package e3db
@@ -40,33 +41,69 @@ func dieErr(err error) {
 }
 
 func setup() {
-	apiURL := os.Getenv("API_URL")
-	token := os.Getenv("REGISTRATION_TOKEN")
+	fmt.Println("Starting setup...")
+	// Check and log environment variables
+	apiURL := "https://api.e3db.com"
+	token := "b80a10bb1db01be18ea631f327e5800edfab57a3d0580f0cffd159e0fe038348"
+	fmt.Printf("API_URL: %s\n", apiURL)
+	fmt.Printf("REGISTRATION_TOKEN: %s\n", token[:5]+"...") // Only show first 5 characters
+
+	if apiURL == "" || token == "" {
+		fmt.Println("Error: API_URL or REGISTRATION_TOKEN is not set")
+		dieErr(fmt.Errorf("missing environment variables"))
+	}
 
 	clientName := "test-client-" + base64Encode(randomSecretKey()[:8])
 	shareClientName := "share-client-" + base64Encode(randomSecretKey()[:8])
 
 	pub, priv, err := GenerateKeyPair()
 	if err != nil {
+		fmt.Printf("Error generating key pair: %v\n", err)
 		dieErr(err)
 	}
-	pubBytes, _ := base64Decode(pub)
-	privBytes, _ := base64Decode(priv)
+
+	pubBytes, err := base64Decode(pub)
+	if err != nil {
+		fmt.Printf("Error decoding public key: %v\n", err)
+		dieErr(err)
+	}
+
+	privBytes, err := base64Decode(priv)
+	if err != nil {
+		fmt.Printf("Error decoding private key: %v\n", err)
+		dieErr(err)
+	}
 
 	pub2, priv2, err := GenerateKeyPair()
 	if err != nil {
+		fmt.Printf("Error generating second key pair: %v\n", err)
 		dieErr(err)
 	}
-	pubBytes2, _ := base64Decode(pub2)
-	privBytes2, _ := base64Decode(priv2)
 
+	pubBytes2, err := base64Decode(pub2)
+	if err != nil {
+		fmt.Printf("Error decoding second public key: %v\n", err)
+		dieErr(err)
+	}
+
+	privBytes2, err := base64Decode(priv2)
+	if err != nil {
+		fmt.Printf("Error decoding second private key: %v\n", err)
+		dieErr(err)
+	}
+
+	fmt.Printf("Registering client: %s\n", clientName)
+	fmt.Printf("Registering client to : %s\n", apiURL)
 	clientDetails, _, err := RegisterClient(token, clientName, pub, "", false, apiURL)
 	if err != nil {
+		fmt.Printf("Error registering client: %v\n", err)
 		dieErr(err)
 	}
 
+	fmt.Printf("Registering share client: %s\n", shareClientName)
 	shareClientDetails, _, err := RegisterClient(token, shareClientName, pub2, "", false, apiURL)
 	if err != nil {
+		fmt.Printf("Error registering share client: %v\n", err)
 		dieErr(err)
 	}
 
@@ -81,12 +118,17 @@ func setup() {
 		Logging:     false,
 	}
 
+	fmt.Println("Getting client...")
 	client, err = GetClient(*clientOpts)
 	if err != nil {
+		fmt.Printf("Error getting client: %v\n", err)
 		dieErr(err)
 	}
+
+	fmt.Println("Getting alt client...")
 	altClient, err = GetClient(*clientOpts)
 	if err != nil {
+		fmt.Printf("Error getting alt client: %v\n", err)
 		dieErr(err)
 	}
 
@@ -102,12 +144,16 @@ func setup() {
 		Logging:     false,
 	}
 
+	fmt.Println("Getting client2...")
 	client2, err = GetClient(*opts)
 	if err != nil {
+		fmt.Printf("Error getting client2: %v\n", err)
 		dieErr(err)
 	}
 
 	clientSharedWithID = client2.Options.ClientID
+
+	fmt.Println("Setup completed successfully")
 }
 
 func shutdown() {
