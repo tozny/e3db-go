@@ -14,7 +14,7 @@ require (
 
 require (
 	github.com/gbrlsnchs/jwt/v2 v2.0.0 // indirect
-	github.com/golang/protobuf v1.4.2 // indirect
+	github.com/golang/protobuf v1.5.0 // indirect
 	github.com/gorilla/schema v1.4.1 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect
 	github.com/tozny/utils-go v0.0.51 // indirect
@@ -24,7 +24,7 @@ require (
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sys v0.18.0 // indirect
 	google.golang.org/appengine v1.6.6 // indirect
-	google.golang.org/protobuf v1.25.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/h2non/gentleman.v2 v2.0.5 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
