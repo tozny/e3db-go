@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/mail"
 	"os"
@@ -237,7 +236,7 @@ func cmdWrite(cmd *cli.Cmd) {
 		// Read record data
 		dataRunes := []rune(*data)
 		if dataRunes[0] == '@' {
-			b, err := ioutil.ReadFile(string(dataRunes[1:]))
+			b, err := os.ReadFile(string(dataRunes[1:]))
 			if err != nil {
 				dieErr(err)
 			}
@@ -257,7 +256,7 @@ func cmdWrite(cmd *cli.Cmd) {
 		jsonMetaData := make(map[string]string)
 		if len(metaRunes) > 0 {
 			if metaRunes[0] == '@' {
-				b, err := ioutil.ReadFile(string(metaRunes[1:]))
+				b, err := os.ReadFile(string(metaRunes[1:]))
 				if err != nil {
 					dieErr(err)
 				}

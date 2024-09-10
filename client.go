@@ -29,7 +29,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -299,7 +298,7 @@ func (err *httpError) Error() string {
 }
 
 func closeResp(resp *http.Response) {
-	io.Copy(ioutil.Discard, resp.Body)
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 }
 
@@ -1721,7 +1720,7 @@ func exchangeCodeForToken(w http.ResponseWriter, r *http.Request, tokenReturn *T
 		return
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		fmt.Printf("Unable to read body. Err: %+v\n", err)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -221,11 +220,11 @@ func TestCreateAndReadFileSecretSucceeds(t *testing.T) {
 		}
 	}()
 	// Compare plaintext and decrypted file contents
-	plaintext, err := ioutil.ReadFile(plaintextFileName)
+	plaintext, err := os.ReadFile(plaintextFileName)
 	if err != nil {
 		t.Fatalf("Could not read %s file: %+v", plaintextFileName, err)
 	}
-	decrypted, err := ioutil.ReadFile(decryptedFileName)
+	decrypted, err := os.ReadFile(decryptedFileName)
 	if err != nil {
 		t.Fatalf("Could not read %s file: %+v", decryptedFileName, err)
 	}
