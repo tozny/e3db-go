@@ -208,38 +208,47 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 	}
 
 	buf := new(bytes.Buffer)
-	json.NewEncoder(buf).Encode(request)
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/account/e3db/clients/register", apiURL), buf)
+	if err := json.NewEncoder(buf).Encode(request); err != nil {
+		return nil, apiURL, fmt.Errorf("failed to encode request: %v", err)
+	}
 
+	url := fmt.Sprintf("%s/v1/account/e3db/clients/register", apiURL)
+
+	req, err := http.NewRequest("POST", url, buf)
 	if err != nil {
-		return nil, apiURL, err
+		return nil, apiURL, fmt.Errorf("failed to create request: %v", err)
 	}
 
 	client := &http.Client{}
-
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, apiURL, err
+		return nil, apiURL, fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the entire response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, apiURL, fmt.Errorf("failed to read response body: %v", err)
 	}
 
-	defer closeResp(resp)
+	// Check if the status code indicates an error
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, apiURL, fmt.Errorf("API returned non-200 status code: %d, body: %s", resp.StatusCode, string(body))
+	}
 
 	var details *ClientDetails
-	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
-		closeResp(resp)
-		return nil, apiURL, err
+	if err := json.Unmarshal(body, &details); err != nil {
+		return nil, apiURL, fmt.Errorf("failed to decode response JSON: %v, raw response: %s", err, string(body))
 	}
 
 	backupClient := resp.Header.Get("X-Backup-Client")
-
 	if backup {
 		if privateKey == "" {
-			return nil, apiURL, errors.New("Cannot back up client credentials without a private key!")
+			return nil, apiURL, errors.New("cannot back up client credentials without a private key")
 		}
-
 		pubBytes, _ := base64.RawURLEncoding.DecodeString(publicKey)
 		privBytes, _ := base64.RawURLEncoding.DecodeString(privateKey)
-
 		config := &ClientOpts{
 			ClientID:    details.ClientID,
 			ClientEmail: "",
@@ -250,14 +259,13 @@ func RegisterClient(registrationToken string, clientName string, publicKey strin
 			APIBaseURL:  "https://api.e3db.com",
 			Logging:     false,
 		}
-
 		client, err := GetClient(*config)
 		if err != nil {
-			closeResp(resp)
-			return nil, apiURL, err
+			return nil, apiURL, fmt.Errorf("failed to get client for backup: %v", err)
 		}
-
-		client.Backup(context.Background(), backupClient, registrationToken)
+		if err := client.Backup(context.Background(), backupClient, registrationToken); err != nil {
+			return nil, apiURL, fmt.Errorf("failed to backup client: %v", err)
+		}
 	}
 
 	return details, apiURL, nil
