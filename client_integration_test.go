@@ -45,8 +45,6 @@ func setup() {
 	// Check and log environment variables
 	apiURL := os.Getenv("API_URL")
 	token := os.Getenv("REGISTRATION_TOKEN")
-	fmt.Printf("API_URL: %s\n", apiURL)
-	fmt.Printf("REGISTRATION_TOKEN: %s\n", token[:5]+"...") // Only show first 5 characters
 
 	if apiURL == "" || token == "" {
 		fmt.Println("Error: API_URL or REGISTRATION_TOKEN is not set")
