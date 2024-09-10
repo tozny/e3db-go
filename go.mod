@@ -15,7 +15,7 @@ require (
 require (
 	github.com/gbrlsnchs/jwt/v2 v2.0.0 // indirect
 	github.com/golang/protobuf v1.4.2 // indirect
-	github.com/gorilla/schema v1.2.0 // indirect
+	github.com/gorilla/schema v1.4.1 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect
 	github.com/tozny/utils-go v0.0.51 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
