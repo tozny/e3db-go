@@ -1573,6 +1573,7 @@ func (c *ToznySDKV3) Login(ctx context.Context, email string, password string, s
 	account.Client = &mainClient
 	account.Token = accountToken
 	account.Config = clientConfig
+	account.AccountID = authResponse.Profile.AccountID
 	return account, nil
 }
 

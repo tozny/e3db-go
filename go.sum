@@ -36,10 +36,10 @@ github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UV
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
-github.com/tozny/e3db-clients-go v0.0.283 h1:K/csA955pRgREIhTs0iFXWou7Qm8z2+XiiD8Dhx0P+Q=
-github.com/tozny/e3db-clients-go v0.0.283/go.mod h1:LuJn6u3t5qzR9HQhaSPUKZj19rVi03wIYvD8aYWq6Cs=
-github.com/tozny/utils-go v0.0.68 h1:ITJ6Pfbq/H5l6xgPvjaX2+1MgQv3UiXg9TmzkVDbqXM=
-github.com/tozny/utils-go v0.0.68/go.mod h1:xORMg7RI49h/2qqz8VuY6i35MtTiSn/Gw1/gj1Lx0TI=
+github.com/tozny/e3db-clients-go v0.0.287 h1:nCEn005tByPIepJ9FAlfmJdvXNEvKQXuF0aaEf33/vc=
+github.com/tozny/e3db-clients-go v0.0.287/go.mod h1:sMo5D49Lb9uYfGB3X7L0GSV6ue9LKrKwXmdd0D/8icA=
+github.com/tozny/utils-go v0.0.69 h1:fgcQ6KwsJdjYRPC6iK+uGNp8TEnhhOOFJeWXaTJ6+pg=
+github.com/tozny/utils-go v0.0.69/go.mod h1:qqMh5Bthi5yeatJhPFhVxMAD/f/8bRFDiAknPczXt1E=
 go.uber.org/atomic v1.6.0/go.mod h1:sABNBOSYdrvTF6hTgEIbc7YasKWGhgEQZyfxyTvoXHQ=
 go.uber.org/atomic v1.7.0 h1:ADUqmZGgLDDfbSL9ZmPxKTybcoEYHgpYfELNoN+7hsw=
 go.uber.org/atomic v1.7.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=
