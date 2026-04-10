@@ -1023,7 +1023,7 @@ func GetSDKV3ForTozIDUser(login TozIDLoginRequest) (*ToznySDKV3, error) {
 			if err != nil {
 				return nil, err
 			} else if sessionResponse.Message.IsError {
-				return nil, fmt.Errorf(sessionResponse.Message.Summary)
+				return nil, errors.New(sessionResponse.Message.Summary)
 			}
 		}
 	}
